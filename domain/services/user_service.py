@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, List
 from infrastructure.database.repositories import UserRepository
 from domain.models.user import TelegramUser
 
@@ -26,6 +26,14 @@ class UserService:
         """Получает имя пользователя Marzban по Telegram ID"""
         user = await self.user_repository.get_by_telegram_id(telegram_id)
         return user.marzban_username if user else None
+
+    async def get_user_by_marzban_username(self, username: str) -> Optional[TelegramUser]:
+        """Получает пользователя по имени в Marzban"""
+        return await self.user_repository.get_by_marzban_username(username)
+
+    async def get_all_users(self) -> List[TelegramUser]:
+        """Возвращает всех пользователей бота"""
+        return await self.user_repository.get_all()
 
     async def update_user_subscription_type(self, telegram_id: int, subscription_type: str):
         """Обновляет тип подписки пользователя"""

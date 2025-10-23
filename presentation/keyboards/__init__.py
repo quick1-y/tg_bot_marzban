@@ -11,7 +11,8 @@ from .support_keyboards import (
 )
 from .admin_keyboards import (
     get_admin_main_keyboard,
-    get_admin_users_keyboard
+    get_admin_users_keyboard,
+    get_admin_admins_keyboard
 )
 from .common_keyboards import (
     get_pagination_keyboard,
@@ -30,6 +31,7 @@ __all__ = [
     'get_user_support_menu_keyboard',
     'get_admin_main_keyboard',
     'get_admin_users_keyboard',
+    'get_admin_admins_keyboard',
     'get_pagination_keyboard',
     'get_confirmation_keyboard'
 ]
