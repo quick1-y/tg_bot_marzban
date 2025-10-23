@@ -46,6 +46,10 @@ class SupportService:
         """Возвращает конкретный тикет, если он принадлежит пользователю"""
         return await self.support_repository.get_ticket_by_id(ticket_id, user_id)
 
+    async def get_ticket_for_admin(self, ticket_id: int) -> Optional[SupportTicket]:
+        """Возвращает тикет по ID для администратора/саппорта"""
+        return await self.support_repository.get_ticket_by_id_admin(ticket_id)
+
     async def get_all_tickets(self, limit: int = 50) -> List[SupportTicket]:
         """Возвращает список всех тикетов для административного просмотра"""
         return await self.support_repository.get_all_tickets(limit=limit)
@@ -114,4 +118,16 @@ class SupportService:
     async def close_ticket(self, ticket_id: int) -> bool:
         """Закрывает тикет"""
         return await self.support_repository.update_ticket_status(ticket_id, "closed")
+
+    async def reopen_ticket(self, ticket_id: int) -> bool:
+        """Переоткрывает тикет"""
+        return await self.support_repository.update_ticket_status(ticket_id, "open")
+
+    async def update_ticket_status(self, ticket_id: int, status: str) -> bool:
+        """Обновляет статус тикета произвольно"""
+        return await self.support_repository.update_ticket_status(ticket_id, status)
+
+    async def add_ticket_response(self, ticket_id: int, response: str) -> bool:
+        """Сохраняет ответ поддержки"""
+        return await self.support_repository.update_ticket_response(ticket_id, response)
 

@@ -35,6 +35,15 @@ def get_support_tickets_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 
+def get_support_ticket_search_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура при запросе ID тикета"""
+    keyboard = [
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_support_tickets")],
+        [InlineKeyboardButton(text="❌ Отмена", callback_data="support_ticket_cancel")],
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
 def get_support_tickets_pagination_keyboard(offset: int, total: int, page_size: int = 10) -> InlineKeyboardMarkup:
     """Клавиатура для постраничного просмотра тикетов поддержки"""
     buttons = []
@@ -49,6 +58,26 @@ def get_support_tickets_pagination_keyboard(offset: int, total: int, page_size: 
         ])
 
     buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="admin_support_tickets")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def get_admin_ticket_actions_keyboard(ticket_id: int, is_open: bool) -> InlineKeyboardMarkup:
+    """Клавиатура действий с конкретным тикетом"""
+    buttons = [
+        [InlineKeyboardButton(text="✉️ Ответить пользователю", callback_data=f"support_ticket_reply:{ticket_id}")]
+    ]
+
+    if is_open:
+        buttons.append(
+            [InlineKeyboardButton(text="🔒 Закрыть тикет", callback_data=f"support_ticket_toggle:{ticket_id}:closed")]
+        )
+    else:
+        buttons.append(
+            [InlineKeyboardButton(text="🔓 Открыть тикет", callback_data=f"support_ticket_toggle:{ticket_id}:open")]
+        )
+
+    buttons.append([InlineKeyboardButton(text="🔙 К списку", callback_data="admin_support_tickets")])
+
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
