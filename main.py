@@ -47,7 +47,7 @@ async def main():
 
     # Инициализация обработчиков
     user_handlers = UserHandlers(subscription_service, user_service, support_service)
-    admin_handlers = AdminHandlers(marzban_client, support_service)
+    admin_handlers = AdminHandlers(marzban_client, support_service, user_service)
     support_handlers = SupportHandlers(support_service)
 
     # Регистрация роутеров

@@ -2,7 +2,7 @@
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 
-def get_pagination_keyboard(current_page: int, total_pages: int, data_type: str):
+def get_pagination_keyboard(current_page: int, total_pages: int, data_type: str, back_callback: str = "admin_users"):
     """Клавиатура пагинации"""
     buttons = []
 
@@ -23,7 +23,7 @@ def get_pagination_keyboard(current_page: int, total_pages: int, data_type: str)
             callback_data=f"{data_type}_page_{current_page + 1}"
         ))
 
-    back_button = [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_users")]
+    back_button = [InlineKeyboardButton(text="🔙 Назад", callback_data=back_callback)]
     return InlineKeyboardMarkup(inline_keyboard=[buttons, back_button])
 
 

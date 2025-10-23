@@ -18,10 +18,23 @@ def get_admin_main_keyboard():
 def get_admin_users_keyboard():
     """Клавиатура управления пользователями"""
     keyboard = [
-        [InlineKeyboardButton(text="📋 Список пользователей", callback_data="users_list")],
+        [InlineKeyboardButton(text="📋 Список пользователей", callback_data="users_list:0")],
+        [InlineKeyboardButton(text="🔍 Найти пользователя", callback_data="users_search")],
         [InlineKeyboardButton(text="➕ Добавить пользователя", callback_data="user_add")],
         [InlineKeyboardButton(text="⏰ Добавить время всем", callback_data="users_add_time")],
         [InlineKeyboardButton(text="💽 Добавить трафик всем", callback_data="users_add_data")],
+        [InlineKeyboardButton(text="📣 Массовая рассылка", callback_data="users_broadcast")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_back")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_admin_admins_keyboard():
+    """Клавиатура управления администраторами"""
+    keyboard = [
+        [InlineKeyboardButton(text="📋 Список администраторов", callback_data="admins_list:0")],
+        [InlineKeyboardButton(text="🔍 Найти администратора", callback_data="admins_search")],
+        [InlineKeyboardButton(text="➕ Добавить администратора", callback_data="admins_add")],
         [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_back")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=keyboard)

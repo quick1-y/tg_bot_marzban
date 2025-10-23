@@ -63,11 +63,25 @@ class MarzbanAPIClient:
         return await self.api.get_system_stats(token=self.token.access_token)
 
     # Методы для работы с пользователями
-    async def get_users(self, offset: int = 0, limit: int = 100) -> List[Dict[str, Any]]:
-        """Получение списка пользователей"""
+    async def get_users(self, offset: int = 0, limit: int = 100, search: Optional[str] = None) -> Dict[str, Any]:
+        """Получение списка пользователей с учетом пагинации"""
         await self._ensure_api()
-        users = await self.api.get_users(offset=offset, limit=limit, token=self.token.access_token)
-        return [user.dict() for user in users] if users else []
+        response = await self.api.get_users(
+            token=self.token.access_token,
+            offset=offset,
+            limit=limit,
+            search=search
+        )
+
+        if not response:
+            return {"total": 0, "users": []}
+
+        users = getattr(response, "users", [])
+        total = getattr(response, "total", len(users))
+        return {
+            "total": total,
+            "users": [user.dict() for user in users] if users else []
+        }
 
     async def get_user(self, username: str) -> Optional[Dict[str, Any]]:
         """Получение информации о пользователе"""
@@ -130,18 +144,28 @@ class MarzbanAPIClient:
         return result.dict() if result else {}
 
     # Методы для работы с администраторами
-    async def get_admins(self, offset: int = 0, limit: int = 100) -> List[Dict[str, Any]]:
+    async def get_admins(self, offset: int = 0, limit: int = 100, username: Optional[str] = None) -> List[Dict[str, Any]]:
         """Получение списка администраторов"""
         await self._ensure_api()
-        admins = await self.api.get_admins(offset=offset, limit=limit, token=self.token.access_token)
+        admins = await self.api.get_admins(
+            token=self.token.access_token,
+            offset=offset,
+            limit=limit,
+            username=username
+        )
         return [admin.dict() for admin in admins] if admins else []
+
+    async def get_admin(self, username: str) -> Optional[Dict[str, Any]]:
+        """Получение информации об администраторе"""
+        admins = await self.get_admins(username=username, limit=1)
+        return admins[0] if admins else None
 
     async def create_admin(self, admin_data: Dict[str, Any]) -> Dict[str, Any]:
         """Создание администратора"""
         await self._ensure_api()
         from marzban.models import AdminCreate
         admin_create = AdminCreate(**admin_data)
-        result = await self.api.add_admin(admin=admin_create, token=self.token.access_token)
+        result = await self.api.create_admin(admin=admin_create, token=self.token.access_token)
         return result.dict() if result else {}
 
     async def modify_admin(self, username: str, admin_data: Dict[str, Any]) -> Dict[str, Any]:

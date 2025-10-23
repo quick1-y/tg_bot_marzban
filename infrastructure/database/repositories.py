@@ -51,6 +51,29 @@ class UserRepository:
             )
         return None
 
+    async def get_by_marzban_username(self, username: str) -> Optional[TelegramUser]:
+        """Получает пользователя по имени в Marzban"""
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = await conn.execute(
+                'SELECT telegram_id, marzban_username, subscription_type, created_at FROM bot_users WHERE marzban_username = ?',
+                (username,)
+            )
+            result = await cursor.fetchone()
+            await cursor.close()
+
+        if result:
+            created_at = result[3]
+            if created_at:
+                created_at = datetime.fromisoformat(created_at)
+            return TelegramUser(
+                telegram_id=result[0],
+                marzban_username=result[1],
+                subscription_type=result[2],
+                created_at=created_at
+            )
+        return None
+
     async def save(self, user: TelegramUser):
         """Сохраняет пользователя"""
         async with aiosqlite.connect(self.db_path) as conn:
