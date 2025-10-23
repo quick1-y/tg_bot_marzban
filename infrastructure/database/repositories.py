@@ -158,7 +158,7 @@ class SupportRepository:
         return tickets
 
     async def get_ticket_by_id(self, ticket_id: int, user_id: int) -> Optional[SupportTicket]:
-        """Получает один тикет"""
+        """Получает один тикет, принадлежащий пользователю"""
         async with aiosqlite.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             cursor = await conn.execute(
@@ -171,6 +171,33 @@ class SupportRepository:
             await cursor.close()
         if not result:
             return None
+        return SupportTicket(
+            id=result[0],
+            user_id=result[1],
+            user_name=result[2],
+            message=result[3],
+            response=result[4],
+            status=result[5],
+            created_at=datetime.fromisoformat(result[6]) if result[6] else None,
+            updated_at=datetime.fromisoformat(result[7]) if result[7] else None
+        )
+
+    async def get_ticket_by_id_admin(self, ticket_id: int) -> Optional[SupportTicket]:
+        """Получает тикет по ID без ограничения по пользователю"""
+        async with aiosqlite.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = await conn.execute(
+                '''SELECT id, user_id, user_name, message, response, status, created_at, updated_at
+                   FROM support_tickets
+                   WHERE id = ?''',
+                (ticket_id,)
+            )
+            result = await cursor.fetchone()
+            await cursor.close()
+
+        if not result:
+            return None
+
         return SupportTicket(
             id=result[0],
             user_id=result[1],
@@ -230,6 +257,19 @@ class SupportRepository:
             cursor = await conn.execute(
                 'UPDATE support_tickets SET status = ?, updated_at = ? WHERE id = ?',
                 (status, updated_at, ticket_id)
+            )
+            await conn.commit()
+            affected = cursor.rowcount
+            await cursor.close()
+        return affected > 0
+
+    async def update_ticket_response(self, ticket_id: int, response: str) -> bool:
+        """Сохраняет ответ поддержки для тикета"""
+        updated_at = datetime.now().isoformat()
+        async with aiosqlite.connect(self.db_path) as conn:
+            cursor = await conn.execute(
+                'UPDATE support_tickets SET response = ?, updated_at = ? WHERE id = ?',
+                (response, updated_at, ticket_id)
             )
             await conn.commit()
             affected = cursor.rowcount
