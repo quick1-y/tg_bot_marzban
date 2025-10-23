@@ -88,6 +88,13 @@ class SupportHandlers(BaseHandler):
 
             try:
                 ticket = await self.support_service.create_support_ticket(user_id, user_name, message_text)
+                if not ticket:
+                    await callback.message.edit_text(
+                        "⚠️ У вас уже есть максимальное количество открытых обращений.",
+                        reply_markup=get_user_main_keyboard(user_id)
+                    )
+                    await state.clear()
+                    return
                 admin_message = await self.support_service.format_support_message_for_admin(user_id, user_name, message_text)
 
                 recipients = set(config.ADMIN_TG_IDS + config.SUPPORT_TG_IDS)

@@ -16,6 +16,10 @@ from aiogram.fsm.state import State, StatesGroup
 
 from presentation.handlers.base import BaseHandler
 from presentation.keyboards.user_keyboards import get_user_main_keyboard
+from presentation.keyboards.support_keyboards import (
+    get_user_support_menu_keyboard,
+    get_user_tickets_list_keyboard,
+)
 from domain.services.subscription_service import SubscriptionService
 from domain.services.user_service import UserService
 from domain.services.support_service import SupportService
@@ -25,6 +29,17 @@ import datetime
 
 
 logger = logging.getLogger(__name__)
+
+
+# === helpers ===
+def build_welcome_message(support_text: str) -> str:
+    return (
+        "🔒 Добро пожаловать в VPN сервис!\n\n"
+        "💎 Выберите удобный тип подписки:\n\n"
+        f"• 📅 Ежемесячная — {config.STAR_PRICE_PER_MONTH}⭐/мес\n"
+        f"• 💾 По трафику — {config.STAR_PRICE_PER_GB}⭐/ГБ\n\n"
+        f"{support_text}"
+    )
 
 
 # === FSM состояния ===
@@ -101,25 +116,16 @@ class UserHandlers(BaseHandler):
     async def start(self, message: Message):
         telegram_id = message.from_user.id
         await self.user_service.get_or_create_user(telegram_id)
-        welcome_message = (
-            "🔒 Добро пожаловать в VPN сервис!\n\n"
-            "💎 Выберите удобный тип подписки:\n\n"
-            f"• 📅 Ежемесячная — {config.STAR_PRICE_PER_MONTH}⭐/мес\n"
-            f"• 💾 По трафику — {config.STAR_PRICE_PER_GB}⭐/ГБ\n\n"
-            f"{self.support_service.get_support_contact_info()}"
-        )
+        welcome_message = build_welcome_message(self.support_service.get_support_contact_info())
         await message.answer(welcome_message, reply_markup=get_user_main_keyboard(telegram_id))
 
     # === Поддержка ===
     async def open_support_menu(self, callback: CallbackQuery, state: FSMContext):
         await state.clear()
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="✉️ Создать обращение", callback_data="create_support_ticket")],
-            [InlineKeyboardButton(text="📬 Мои обращения", callback_data="view_my_tickets")],
-            [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_main")]
-        ])
-        await callback.message.edit_text("🆘 Раздел поддержки.\n\nВы можете создать обращение или просмотреть свои предыдущие тикеты.",
-                                         reply_markup=keyboard)
+        await callback.message.edit_text(
+            "🆘 Раздел поддержки.\n\nВы можете создать обращение или просмотреть свои предыдущие тикеты.",
+            reply_markup=get_user_support_menu_keyboard()
+        )
 
     async def create_support_ticket(self, callback: CallbackQuery, state: FSMContext):
         telegram_id = callback.from_user.id
@@ -157,9 +163,7 @@ class UserHandlers(BaseHandler):
         user_id = callback.from_user.id
         tickets = await self.support_service.get_user_tickets(user_id)
         msg = await self.support_service.format_ticket_list_for_user(tickets)
-        keyboard_buttons = [[InlineKeyboardButton(text=f"#{t.id}", callback_data=f"ticket_{t.id}")] for t in tickets]
-        keyboard_buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_support")])
-        markup = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+        markup = get_user_tickets_list_keyboard(tickets)
         await callback.message.edit_text(msg, reply_markup=markup)
 
     async def open_ticket_detail(self, callback: CallbackQuery, state: FSMContext):
@@ -447,13 +451,7 @@ class UserHandlers(BaseHandler):
     async def handle_back_to_main(self, callback: CallbackQuery, state: FSMContext):
         await state.clear()
         user_id = callback.from_user.id
-        welcome_message = (
-            "🔒 Добро пожаловать в VPN сервис!\n\n"
-            "💎 Выберите тип подписки:\n\n"
-            f"• 📅 Ежемесячная — {config.STAR_PRICE_PER_MONTH}⭐/мес\n"
-            f"• 💾 По трафику — {config.STAR_PRICE_PER_GB}⭐/ГБ\n\n"
-            f"{self.support_service.get_support_contact_info()}"
-        )
+        welcome_message = build_welcome_message(self.support_service.get_support_contact_info())
         await callback.message.edit_text(welcome_message, reply_markup=get_user_main_keyboard(user_id))
 
     # === Вывод подписки ===
