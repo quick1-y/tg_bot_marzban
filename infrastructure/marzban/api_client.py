@@ -66,13 +66,40 @@ class MarzbanAPIClient:
             return {}
 
         if hasattr(stats, "dict"):
-            return stats.dict()
+            raw_stats = stats.dict()
+        elif isinstance(stats, dict):
+            raw_stats = stats
+        else:
+            # Fallback для объектов без метода dict()
+            raw_stats = {
+                key: getattr(stats, key)
+                for key in dir(stats)
+                if not key.startswith("_")
+            }
 
-        if isinstance(stats, dict):
-            return stats
+        normalized_stats = dict(raw_stats)
 
-        # Fallback для объектов без метода dict()
-        return {key: getattr(stats, key) for key in dir(stats) if not key.startswith("_")}
+        # Нормализация имен полей и расчет агрегатов
+        normalized_stats["cores"] = raw_stats.get("cores") or raw_stats.get("cpu_cores")
+        normalized_stats["cpu_usage"] = raw_stats.get("cpu_usage")
+        normalized_stats["ram_total"] = raw_stats.get("ram_total") or raw_stats.get("mem_total")
+        normalized_stats["ram_usage"] = raw_stats.get("ram_usage") or raw_stats.get("mem_used")
+
+        incoming_bandwidth = raw_stats.get("incoming_bandwidth")
+        outgoing_bandwidth = raw_stats.get("outgoing_bandwidth")
+
+        normalized_stats["incoming_bandwidth"] = incoming_bandwidth
+        normalized_stats["outgoing_bandwidth"] = outgoing_bandwidth
+
+        if incoming_bandwidth is not None or outgoing_bandwidth is not None:
+            normalized_stats["total_traffic"] = (incoming_bandwidth or 0) + (outgoing_bandwidth or 0)
+
+        normalized_stats["total_users"] = raw_stats.get("total_users") or raw_stats.get("total_user")
+        normalized_stats["active_users"] = raw_stats.get("active_users") or raw_stats.get("users_active")
+        normalized_stats["on_hold_users"] = raw_stats.get("on_hold_users") or raw_stats.get("users_on_hold")
+        normalized_stats["disabled_users"] = raw_stats.get("disabled_users") or raw_stats.get("users_disabled")
+
+        return normalized_stats
 
     # Методы для работы с пользователями
     async def get_users(self, offset: int = 0, limit: int = 100, search: Optional[str] = None) -> Dict[str, Any]:

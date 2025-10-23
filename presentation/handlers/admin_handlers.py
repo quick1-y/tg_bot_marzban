@@ -1623,23 +1623,70 @@ class AdminHandlers(BaseHandler):
         try:
             stats = await self.marzban_client.get_system_stats()
 
-            cores = stats.get('cores', 1)
-            cpu_usage = stats.get('cpu_usage', 0)
-            ram_usage = stats.get('ram_usage', 0) or 0
-            ram_total = stats.get('ram_total', 1) or 1
-            ram_usage_percent = (ram_usage / ram_total * 100) if ram_total else 0
+            def _get_stat(*keys):
+                for key in keys:
+                    value = stats.get(key)
+                    if value is not None:
+                        return value
+                return None
+
+            cores = _get_stat('cores', 'cpu_cores')
+            cpu_usage = _get_stat('cpu_usage')
+
+            ram_total = _get_stat('ram_total', 'mem_total')
+            ram_usage = _get_stat('ram_usage', 'mem_used')
+
+            total_traffic = _get_stat('total_traffic')
+
+            total_users = _get_stat('total_users', 'total_user')
+            active_users = _get_stat('active_users', 'users_active')
+            on_hold_users = _get_stat('on_hold_users', 'users_on_hold')
+            disabled_users = _get_stat('disabled_users', 'users_disabled')
+
+            cores_text = f"{int(cores)}" if isinstance(cores, (int, float)) else "—"
+            cpu_usage_text = f"{float(cpu_usage):.1f}%" if isinstance(cpu_usage, (int, float)) else "—"
+
+            if isinstance(ram_usage, (int, float)):
+                ram_usage_mb = ram_usage / (1024 ** 2)
+            else:
+                ram_usage_mb = None
+
+            if isinstance(ram_total, (int, float)) and ram_total:
+                ram_total_mb = ram_total / (1024 ** 2)
+            else:
+                ram_total_mb = None
+
+            if ram_usage_mb is not None and ram_total_mb is not None and ram_total:
+                ram_usage_percent = ram_usage / ram_total * 100
+                ram_usage_text = f"{ram_usage_mb:.1f} МБ ({ram_usage_percent:.1f}%)"
+                ram_free_mb = (ram_total - ram_usage) / (1024 ** 2)
+                ram_free_text = f"{ram_free_mb:.1f} МБ"
+            elif ram_usage_mb is not None:
+                ram_usage_text = f"{ram_usage_mb:.1f} МБ"
+                ram_free_text = "—"
+            else:
+                ram_usage_text = "—"
+                ram_free_text = "—"
+
+            if isinstance(total_traffic, (int, float)):
+                total_traffic_text = f"{total_traffic / (1024 ** 3):.2f} ГБ"
+            else:
+                total_traffic_text = "—"
+
+            def _format_users(value):
+                return str(int(value)) if isinstance(value, (int, float)) else "—"
 
             message = (
                 "📊 **Системная статистика**\n\n"
-                f"🖥️ **ЦП:** {cores} ядер\n"
-                f"📈 **Загрузка ЦП:** {cpu_usage:.1f}%\n"
-                f"💾 **Используется ОЗУ:** {ram_usage / 1024 / 1024:.1f} МБ ({ram_usage_percent:.1f}%)\n"
-                f"🆓 **Доступно ОЗУ:** {(ram_total - ram_usage) / 1024 / 1024:.1f} МБ\n"
-                f"🔽 **Использовано трафика:** {stats.get('total_traffic', 0) / (1024 ** 3):.2f} ГБ\n\n"
-                f"👥 **Всего пользователей:** {stats.get('total_users', 0)}\n"
-                f"🟢 **Активные пользователи:** {stats.get('active_users', 0)}\n"
-                f"⏸️ **В режиме ожидания:** {stats.get('on_hold_users', 0)}\n"
-                f"🔴 **Неактивные пользователи:** {stats.get('disabled_users', 0)}"
+                f"🖥️ **ЦП:** {cores_text} ядер\n"
+                f"📈 **Загрузка ЦП:** {cpu_usage_text}\n"
+                f"💾 **Используется ОЗУ:** {ram_usage_text}\n"
+                f"🆓 **Доступно ОЗУ:** {ram_free_text}\n"
+                f"🔽 **Использовано трафика:** {total_traffic_text}\n\n"
+                f"👥 **Всего пользователей:** {_format_users(total_users)}\n"
+                f"🟢 **Активные пользователи:** {_format_users(active_users)}\n"
+                f"⏸️ **В режиме ожидания:** {_format_users(on_hold_users)}\n"
+                f"🔴 **Неактивные пользователи:** {_format_users(disabled_users)}"
             )
 
             await callback.message.edit_text(message, parse_mode="Markdown")
