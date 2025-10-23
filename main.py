@@ -65,7 +65,7 @@ async def main():
 
     try:
         await dp.start_polling(bot)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, asyncio.CancelledError):
         logger.info("Бот остановлен")
     finally:
         # Закрытие соединения с API
