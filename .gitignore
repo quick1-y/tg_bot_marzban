@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+
+# Environments
+.venv/
+.env.local
+.env.*.local
+
+# IDEs
+.vscode/
+.idea/
+
+# Databases
+vpn_bot.db
+*.db
+*.sqlite3
+
+# Logs
+*.log
+
+# System files
+.DS_Store
+Thumbs.db
