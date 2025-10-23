@@ -60,7 +60,19 @@ class MarzbanAPIClient:
     async def get_system_stats(self) -> Dict[str, Any]:
         """Получение системной статистики"""
         await self._ensure_api()
-        return await self.api.get_system_stats(token=self.token.access_token)
+        stats = await self.api.get_system_stats(token=self.token.access_token)
+
+        if stats is None:
+            return {}
+
+        if hasattr(stats, "dict"):
+            return stats.dict()
+
+        if isinstance(stats, dict):
+            return stats
+
+        # Fallback для объектов без метода dict()
+        return {key: getattr(stats, key) for key in dir(stats) if not key.startswith("_")}
 
     # Методы для работы с пользователями
     async def get_users(self, offset: int = 0, limit: int = 100, search: Optional[str] = None) -> Dict[str, Any]:
