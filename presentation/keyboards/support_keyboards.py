@@ -40,6 +40,16 @@ def get_user_tickets_list_keyboard(tickets):
     buttons = []
     for t in tickets[:10]:
         text = f"#{t.id} — {'🟢 Открыт' if t.status == 'open' else '🔴 Закрыт'}"
-        buttons.append([InlineKeyboardButton(text=text, callback_data=f"user_view_ticket:{t.id}")])
-    buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="support")])
+        buttons.append([InlineKeyboardButton(text=text, callback_data=f"ticket_{t.id}")])
+    buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_support")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def get_user_support_menu_keyboard() -> InlineKeyboardMarkup:
+    """Меню поддержки для пользователя"""
+    keyboard = [
+        [InlineKeyboardButton(text="✉️ Создать обращение", callback_data="create_support_ticket")],
+        [InlineKeyboardButton(text="📬 Мои обращения", callback_data="view_my_tickets")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_main")],
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)

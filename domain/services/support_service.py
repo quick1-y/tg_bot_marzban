@@ -18,10 +18,9 @@ class SupportService:
     # === Создание тикета ===
     async def create_support_ticket(self, user_id: int, user_name: str, message: str) -> Optional[SupportTicket]:
         """Создает новый тикет поддержки, если не превышен лимит открытых тикетов"""
-        tickets = await self.support_repository.get_tickets_by_user(user_id)
-        open_tickets = [t for t in tickets if t.status == "open"]
+        open_tickets_count = await self.support_repository.get_open_ticket_count(user_id)
 
-        if len(open_tickets) >= 3:
+        if open_tickets_count >= self.MAX_OPEN_TICKETS:
             logger.warning(f"❗ Пользователь {user_name} ({user_id}) пытается создать слишком много тикетов.")
             return None  # сигнализируем, что тикет не создан
 
@@ -45,11 +44,11 @@ class SupportService:
     # === Получение одного тикета ===
     async def get_ticket_details(self, ticket_id: int, user_id: int) -> Optional[SupportTicket]:
         """Возвращает конкретный тикет, если он принадлежит пользователю"""
-        tickets = await self.support_repository.get_tickets_by_user(user_id)
-        for t in tickets:
-            if t.id == ticket_id:
-                return t
-        return None
+        return await self.support_repository.get_ticket_by_id(ticket_id, user_id)
+
+    async def get_all_tickets(self, limit: int = 50) -> List[SupportTicket]:
+        """Возвращает список всех тикетов для административного просмотра"""
+        return await self.support_repository.get_all_tickets(limit=limit)
 
     # === Форматирование списка тикетов ===
     async def format_ticket_list_for_user(self, tickets: List[SupportTicket]) -> str:
@@ -103,7 +102,12 @@ class SupportService:
         """Возвращает информацию о контакте поддержки"""
         support_id = config.SUPPORT_TG_IDS
         if support_id:
-            return f"📞 Техническая поддержка: @{support_id}"
+            if len(support_id) == 1:
+                return f"📞 Техническая поддержка: tg://user?id={support_id[0]}"
+            lines = ["📞 Техническая поддержка:"]
+            for index, contact_id in enumerate(support_id, start=1):
+                lines.append(f"• Контакт {index}: tg://user?id={contact_id}")
+            return "\n".join(lines)
         return "📞 Для связи с техподдержкой используйте кнопку ниже"
 
     # === Закрытие тикета ===
