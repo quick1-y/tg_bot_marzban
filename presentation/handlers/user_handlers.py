@@ -1,6 +1,8 @@
 # presentation/handlers/user_handlers.py
+import html
 import logging
 from typing import Optional, Callable, Awaitable
+from urllib.parse import quote
 from aiogram import F
 from aiogram.types import (
     Message,
@@ -81,6 +83,45 @@ class UserHandlers(BaseHandler):
         self.support_service = support_service
         super().__init__()
 
+    @staticmethod
+    async def _clear_message_keyboard(message: Message) -> None:
+        """Удаляет клавиатуру из предыдущего меню, чтобы она не дублировалась."""
+        if not message:
+            return
+        try:
+            await message.edit_reply_markup(reply_markup=None)
+        except Exception:
+            # Игнорируем ошибки, если сообщение уже без клавиатуры или недоступно.
+            pass
+
+    @staticmethod
+    def _format_copyable_username(username: Optional[str]) -> str:
+        if not username:
+            return "—"
+
+        escaped_username = html.escape(username)
+        encoded_username = quote(username)
+        return f'<a href="tg://copy_text?text={encoded_username}"><code>{escaped_username}</code></a>'
+
+    @staticmethod
+    def _format_subscription_link(url: Optional[str]) -> str:
+        if not url:
+            return "нет данных"
+
+        escaped_url = html.escape(url, quote=True)
+        return f'<a href="{escaped_url}">Открыть</a>'
+
+    @staticmethod
+    def _extract_expire_info(expire_value) -> tuple[str, int]:
+        if isinstance(expire_value, datetime.datetime):
+            expire_str = expire_value.strftime("%d.%m.%Y %H:%M")
+            now = datetime.datetime.utcnow()
+            days_left = max(0, (expire_value - now).days)
+            return expire_str, days_left
+        if isinstance(expire_value, str):
+            return expire_value, 0
+        return "—", 0
+
     async def _fetch_subscription_for_purchase(
         self,
         user_id: int,
@@ -160,6 +201,7 @@ class UserHandlers(BaseHandler):
 
     # === Поддержка ===
     async def open_support_menu(self, callback: CallbackQuery, state: FSMContext):
+        await self._clear_message_keyboard(callback.message)
         await state.clear()
         await callback.message.edit_text(
             "🆘 Раздел поддержки.\n\nВы можете создать обращение или просмотреть свои предыдущие тикеты.",
@@ -167,6 +209,7 @@ class UserHandlers(BaseHandler):
         )
 
     async def create_support_ticket(self, callback: CallbackQuery, state: FSMContext):
+        await self._clear_message_keyboard(callback.message)
         telegram_id = callback.from_user.id
         username = callback.from_user.username or f"user_{telegram_id}"
 
@@ -199,6 +242,7 @@ class UserHandlers(BaseHandler):
         await state.clear()
 
     async def view_my_tickets(self, callback: CallbackQuery, state: FSMContext):
+        await self._clear_message_keyboard(callback.message)
         user_id = callback.from_user.id
         tickets = await self.support_service.get_user_tickets(user_id)
         msg = await self.support_service.format_ticket_list_for_user(tickets)
@@ -206,6 +250,7 @@ class UserHandlers(BaseHandler):
         await callback.message.edit_text(msg, reply_markup=markup)
 
     async def open_ticket_detail(self, callback: CallbackQuery, state: FSMContext):
+        await self._clear_message_keyboard(callback.message)
         user_id = callback.from_user.id
         ticket_id = int(callback.data.replace("ticket_", ""))
         ticket = await self.support_service.get_ticket_details(ticket_id, user_id)
@@ -223,6 +268,7 @@ class UserHandlers(BaseHandler):
     async def show_plan_options(self, callback: CallbackQuery, state: FSMContext):
         from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
+        await self._clear_message_keyboard(callback.message)
         await state.clear()
         telegram_id = callback.from_user.id
 
@@ -238,12 +284,16 @@ class UserHandlers(BaseHandler):
                 sub_type = "traffic"
 
             # Формируем сообщение
+            username_link = self._format_copyable_username(info.username)
+            expire_str, _ = self._extract_expire_info(info.expire_date)
+            subscription_link = self._format_subscription_link(info.subscription_url)
+
             msg = (
-                f"🎉 У вас уже есть активная подписка:\n\n"
+                "🎉 У вас уже есть активная подписка:\n\n"
                 f"📦 Тип: {'📅 Ежемесячная подписка' if sub_type == 'monthly' else '💾 По трафику'}\n"
-                f"👤 Пользователь: {info.username}\n"
-                f"📆 Действует до: {info.expire_date or '—'}\n"
-                f"📎 Ссылка: {info.subscription_url or 'нет данных'}\n\n"
+                f"👤 Пользователь: {username_link}\n"
+                f"📆 Действует до: {html.escape(expire_str)}\n"
+                f"📎 Ссылка: {subscription_link}\n\n"
             )
 
             # В зависимости от типа — показываем нужную кнопку
@@ -270,28 +320,26 @@ class UserHandlers(BaseHandler):
                 ]
 
             markup = InlineKeyboardMarkup(inline_keyboard=keyboard)
-            await callback.message.edit_text(msg, reply_markup=markup)
+            await callback.message.edit_text(msg, reply_markup=markup, parse_mode="HTML")
             return
 
         # Если подписки нет — стандартное меню
         markup = InlineKeyboardMarkup(inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text=f"📅 По времени ({config.STAR_PRICE_PER_MONTH}⭐/мес)",
-                    callback_data="choose_monthly",
-                ),
-                InlineKeyboardButton(
-                    text=f"💾 По трафику ({config.STAR_PRICE_PER_GB}⭐/ГБ)",
-                    callback_data="choose_traffic",
-                ),
-            ],
+            [InlineKeyboardButton(text="📅 По времени", callback_data="choose_monthly")],
+            [InlineKeyboardButton(text="💾 По трафику", callback_data="choose_traffic")],
             [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_main")],
         ])
-        await callback.message.edit_text("💎 Выберите формат подписки:", reply_markup=markup)
+        menu_text = (
+            "💎 Выберите формат подписки:\n\n"
+            f"📅 По времени — {config.STAR_PRICE_PER_MONTH}⭐/мес\n"
+            f"💾 По трафику — {config.STAR_PRICE_PER_GB}⭐/ГБ"
+        )
+        await callback.message.edit_text(menu_text, reply_markup=markup)
 
 
     # === Покупка ежемесячной ===
     async def handle_choose_monthly(self, callback: CallbackQuery, state: FSMContext):
+        await self._clear_message_keyboard(callback.message)
         telegram_id = callback.from_user.id
         cur = await self._fetch_subscription_for_purchase(telegram_id, callback.message.answer)
         if cur is None:
@@ -318,6 +366,7 @@ class UserHandlers(BaseHandler):
 
     # === Покупка по трафику ===
     async def handle_choose_traffic(self, callback: CallbackQuery, state: FSMContext):
+        await self._clear_message_keyboard(callback.message)
         telegram_id = callback.from_user.id
         cur = await self._fetch_subscription_for_purchase(telegram_id, callback.message.answer)
         if cur is None:
@@ -444,41 +493,44 @@ class UserHandlers(BaseHandler):
 
             if result.success:
                 info = result.subscription_info
-                from datetime import datetime
 
                 sub_type = "traffic" if getattr(info, "data_limit_gb", 0) else "monthly"
                 msg = "🎉 Ваша подписка активирована!\n\n"
+                username_link = self._format_copyable_username(info.username)
+                subscription_link = self._format_subscription_link(info.subscription_url)
 
                 if sub_type == "monthly":
-                    expire_dt = info.expire_date
-                    expire_str = expire_dt.strftime("%d.%m.%Y %H:%M") if isinstance(expire_dt, datetime) else str(expire_dt)
-                    days_left = 0
-                    if isinstance(expire_dt, datetime):
-                        days_left = max(0, (expire_dt - datetime.utcnow()).days)
-
+                    expire_raw, days_left = self._extract_expire_info(info.expire_date)
+                    expire_str = html.escape(expire_raw)
                     msg += (
-                        f"📅 Тип: Месячная\n"
+                        "📅 Тип: Месячная\n"
                         f"⏳ Осталось: {days_left} дн.\n"
                         f"📆 До: {expire_str}\n\n"
-                        f"👤 Пользователь: {info.username}\n"
-                        f"📎 Ссылка: {info.subscription_url or 'нет данных'}\n\n"
-                        f"💎 Спасибо, что пользуетесь нашим сервисом!"
+                        f"👤 Пользователь: {username_link}\n"
+                        f"📎 Ссылка: {subscription_link}\n\n"
+                        "💎 Спасибо, что пользуетесь нашим сервисом!"
                     )
 
                 else:
                     used = getattr(info, "used_traffic_gb", 0) or 0
                     total = getattr(info, "data_limit_gb", 0) or 0
                     percent = round((used / total) * 100, 1) if total > 0 else 0
+                    percent = min(percent, 100)
 
                     msg += (
-                        f"💾 Тип: По трафику\n"
+                        "💾 Тип: По трафику\n"
                         f"📊 Использовано: {used:.2f} ГБ / {total:.2f} ГБ ({percent}%)\n\n"
-                        f"👤 Пользователь: {info.username}\n"
-                        f"📎 Ссылка: {info.subscription_url or 'нет данных'}\n\n"
-                        f"💎 Спасибо, что пользуетесь нашим сервисом!"
+                        f"👤 Пользователь: {username_link}\n"
+                        f"📎 Ссылка: {subscription_link}\n\n"
+                        "💎 Спасибо, что пользуетесь нашим сервисом!"
                     )
 
-                await query.bot.send_message(user_id, msg, reply_markup=get_user_main_keyboard(user_id))
+                await query.bot.send_message(
+                    user_id,
+                    msg,
+                    reply_markup=get_user_main_keyboard(user_id),
+                    parse_mode="HTML",
+                )
 
             else:
                 await query.bot.send_message(
@@ -495,6 +547,7 @@ class UserHandlers(BaseHandler):
 
     # === Моя подписка ===
     async def handle_my_subscription(self, callback: CallbackQuery, state: FSMContext):
+        await self._clear_message_keyboard(callback.message)
         telegram_id = callback.from_user.id
         await state.clear()
         result = await self.subscription_service.get_subscription_info(telegram_id)
@@ -502,6 +555,7 @@ class UserHandlers(BaseHandler):
 
     # === Назад в меню ===
     async def handle_back_to_main(self, callback: CallbackQuery, state: FSMContext):
+        await self._clear_message_keyboard(callback.message)
         await state.clear()
         user_id = callback.from_user.id
         welcome_message = build_welcome_message()
@@ -511,8 +565,20 @@ class UserHandlers(BaseHandler):
     async def _handle_subscription_result(self, callback: CallbackQuery, result: SubscriptionResult, user_id: int):
         """Показывает пользователю детальную информацию о его подписке."""
         if not result.success or not result.subscription_info:
+            error_text = (result.error_message or "").lower()
+            if "не найд" in error_text:
+                friendly_text = (
+                    "📭 Подписка не найдена.\n"
+                    "Вы можете оформить новую подписку в разделе «Купить подписку»."
+                )
+            else:
+                friendly_text = (
+                    "⚠️ Не удалось проверить статус подписки.\n"
+                    "Пожалуйста, попробуйте позже или обратитесь в техническую поддержку."
+                )
+
             await callback.message.edit_text(
-                f"❌ {result.error_message or 'Подписка не найдена.'}",
+                friendly_text,
                 reply_markup=get_user_main_keyboard(user_id)
             )
             return
@@ -520,69 +586,60 @@ class UserHandlers(BaseHandler):
         info = result.subscription_info
         data_limit = getattr(info, "data_limit_gb", 0) or 0
         sub_type = "traffic" if data_limit > 0 else "monthly"
+        username_link = self._format_copyable_username(info.username)
+        subscription_link = self._format_subscription_link(info.subscription_url)
 
-        # безопасное определение даты
-        expire = info.expire_date
-        if isinstance(expire, str):
-            expire_str = expire
-            days_left = 0
-        else:
-            expire_str = expire.strftime("%d.%m.%Y %H:%M") if expire else "—"
-            now = datetime.datetime.utcnow()
-            days_left = max(0, (expire - now).days) if expire else 0
-
-        # --- Формирование текста ---
         if sub_type == "monthly":
+            expire_str_raw, days_left = self._extract_expire_info(info.expire_date)
+            expire_str = html.escape(expire_str_raw)
             msg = (
-                f"🎉 Ваша подписка активна!\n\n"
-                f"📅 Тип: Месячная\n"
+                "🎉 Ваша подписка активна!\n\n"
+                "📅 Тип: Месячная\n"
                 f"⏳ Осталось: {days_left} дн.\n"
                 f"📆 До: {expire_str}\n\n"
-                f"👤 Пользователь: `{info.username}`\n"
-                f"📎 Ссылка: {info.subscription_url or 'нет данных'}\n\n"
-                f"💎 Спасибо, что пользуетесь нашим сервисом!"
+                f"👤 Пользователь: {username_link}\n"
+                f"📎 Ссылка: {subscription_link}\n\n"
+                "💎 Спасибо, что пользуетесь нашим сервисом!"
             )
             buttons = [
                 [InlineKeyboardButton(text="🔄 Продлить подписку", callback_data="choose_monthly")],
                 [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_main")]
             ]
-
         else:
-            used = getattr(info, "used_traffic_gb", 0)
-            total = getattr(info, "data_limit_gb", 0)
-            percent = 0
+            used = getattr(info, "used_traffic_gb", 0) or 0
+            total = getattr(info, "data_limit_gb", 0) or 0
+            percent = 0.0
             if total > 0:
                 percent = round((used / total) * 100, 1)
-                if percent > 100:
-                    percent = 100
+                percent = min(percent, 100.0)
 
             msg = (
-                f"🎉 Ваша подписка по трафику!\n\n"
+                "🎉 Ваша подписка по трафику!\n\n"
                 f"💾 Объем: {total:.1f} ГБ\n"
                 f"📊 Использовано: {used:.1f} ГБ ({percent}%)\n"
                 f"📆 Статус: {'🟢 Активна' if info.is_active else '🔴 Неактивна'}\n\n"
-                f"👤 Пользователь: `{info.username}`\n"
-                f"📎 Ссылка: {info.subscription_url or 'нет данных'}\n\n"
-                f"💎 Спасибо, что пользуетесь нашим сервисом!"
+                f"👤 Пользователь: {username_link}\n"
+                f"📎 Ссылка: {subscription_link}\n\n"
+                "💎 Спасибо, что пользуетесь нашим сервисом!"
             )
             buttons = [
                 [InlineKeyboardButton(text="💾 Докупить трафик", callback_data="choose_traffic")],
                 [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_main")]
             ]
 
-        # --- Добавляем конфиги (если есть) ---
         if getattr(info, "configs", None):
             msg += "\n\n🔌 Конфигурации для подключения:\n"
             for i, conf in enumerate(info.configs[:3], start=1):
-                msg += f"{i}. `{conf}`\n"
+                msg += f"{i}. <code>{html.escape(conf)}</code>\n"
 
         markup = InlineKeyboardMarkup(inline_keyboard=buttons)
-        await callback.message.edit_text(msg, reply_markup=markup, parse_mode="Markdown")
+        await callback.message.edit_text(msg, reply_markup=markup, parse_mode="HTML")
 
     # === Меню поддержки ===
     async def handle_support(self, callback: CallbackQuery, state: FSMContext):
         """Главное меню поддержки"""
         from presentation.keyboards.support_keyboards import get_support_keyboard
+        await self._clear_message_keyboard(callback.message)
         await state.clear()
         await callback.message.edit_text(
             "🆘 Техническая поддержка\n\n"
@@ -622,6 +679,7 @@ class UserHandlers(BaseHandler):
     async def handle_user_tickets(self, callback: CallbackQuery, state: FSMContext):
         from presentation.keyboards.support_keyboards import get_support_keyboard
 
+        await self._clear_message_keyboard(callback.message)
         await state.clear()
         telegram_id = callback.from_user.id
         tickets = await self.support_service.get_user_tickets(telegram_id)
@@ -656,6 +714,7 @@ class UserHandlers(BaseHandler):
     # === Просмотр конкретного тикета ===
     async def handle_user_ticket_view(self, callback: CallbackQuery, state: FSMContext):
         from presentation.keyboards.support_keyboards import get_support_keyboard
+        await self._clear_message_keyboard(callback.message)
         ticket_id = int(callback.data.split(":")[1])
         telegram_id = callback.from_user.id
         tickets = await self.support_service.get_user_tickets(telegram_id)
@@ -679,6 +738,7 @@ class UserHandlers(BaseHandler):
 
     # === Пользователь закрывает тикет ===
     async def handle_close_ticket(self, callback: CallbackQuery):
+        await self._clear_message_keyboard(callback.message)
         try:
             _, ticket_id_str = callback.data.split(":")
             ticket_id = int(ticket_id_str)
