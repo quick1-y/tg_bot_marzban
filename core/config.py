@@ -7,7 +7,6 @@ load_dotenv()
 
 class Config:
     BOT_TOKEN = os.getenv("BOT_TOKEN")
-    TG_STAR_PROVIDER_TOKEN = os.getenv("TG_STAR_PROVIDER_TOKEN")
     STAR_PRICE_PER_MONTH = int(os.getenv("STAR_PRICE_PER_MONTH", 1))
     STAR_PRICE_PER_GB = int(os.getenv("STAR_PRICE_PER_GB", 1))
     MARZBAN_API_URL = os.getenv("MARZBAN_API_URL")

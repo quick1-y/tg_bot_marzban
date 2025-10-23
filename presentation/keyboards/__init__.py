@@ -3,6 +3,7 @@ from .support_keyboards import (
     get_support_keyboard,
     get_support_confirmation_keyboard,
     get_support_tickets_keyboard,
+    get_support_tickets_pagination_keyboard,
     get_user_tickets_list_keyboard,
     get_user_support_menu_keyboard
 )
@@ -20,6 +21,7 @@ __all__ = [
     'get_support_keyboard',
     'get_support_confirmation_keyboard',
     'get_support_tickets_keyboard',
+    'get_support_tickets_pagination_keyboard',
     'get_user_tickets_list_keyboard',
     'get_user_support_menu_keyboard',
     'get_admin_main_keyboard',

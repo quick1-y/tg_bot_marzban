@@ -12,7 +12,7 @@
 
 - Python 3.11+
 - Доступ к рабочему экземпляру Marzban
-- Токен Telegram-бота и (опционально) токен Telegram Stars
+- Токен Telegram-бота
 
 ## Установка
 
@@ -38,7 +38,6 @@
 
 ```env
 BOT_TOKEN=your-telegram-bot-token
-TG_STAR_PROVIDER_TOKEN=your-telegram-stars-token
 STAR_PRICE_PER_MONTH=1
 STAR_PRICE_PER_GB=1
 MARZBAN_API_URL=https://your-marzban-host
