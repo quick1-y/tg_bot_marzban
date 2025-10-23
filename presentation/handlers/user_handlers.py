@@ -1,6 +1,6 @@
 # presentation/handlers/user_handlers.py
 import logging
-from typing import Optional
+from typing import Optional, Callable, Awaitable
 from aiogram import F
 from aiogram.types import (
     Message,
@@ -32,13 +32,13 @@ logger = logging.getLogger(__name__)
 
 
 # === helpers ===
-def build_welcome_message(support_text: str) -> str:
+def build_welcome_message() -> str:
     return (
         "🔒 Добро пожаловать в VPN сервис!\n\n"
-        "💎 Выберите удобный тип подписки:\n\n"
+        "💡 Выберите удобный формат подписки:\n\n"
         f"• 📅 Ежемесячная — {config.STAR_PRICE_PER_MONTH}⭐/мес\n"
         f"• 💾 По трафику — {config.STAR_PRICE_PER_GB}⭐/ГБ\n\n"
-        f"{support_text}"
+        "🆘 Нужна помощь? Нажмите кнопку «Техническая поддержка» в меню."
     )
 
 
@@ -81,6 +81,45 @@ class UserHandlers(BaseHandler):
         self.support_service = support_service
         super().__init__()
 
+    async def _fetch_subscription_for_purchase(
+        self,
+        user_id: int,
+        send_method: Callable[..., Awaitable],
+        state: Optional[FSMContext] = None,
+    ) -> Optional[SubscriptionResult]:
+        """Пробует получить подписку перед покупкой и уведомляет пользователя об ошибке."""
+        result = await self.subscription_service.get_subscription_info(user_id)
+
+        if result.success or (
+            result.error_message and "не найд" in result.error_message.lower()
+        ):
+            return result
+
+        if state:
+            await state.clear()
+
+        await send_method(
+            "⚠️ Сейчас покупка недоступна — не удалось проверить статус подписки.\n"
+            "Пожалуйста, попробуйте позже или обратитесь в техническую поддержку.",
+            reply_markup=get_user_main_keyboard(user_id),
+        )
+        return None
+
+    async def _send_main_menu(
+        self,
+        send_method: Callable[..., Awaitable],
+        user_id: int,
+        state: Optional[FSMContext] = None,
+    ) -> None:
+        """Возвращает пользователя в главное меню."""
+        if state:
+            await state.clear()
+
+        await send_method(
+            "🔙 Возвращаю вас в главное меню.",
+            reply_markup=get_user_main_keyboard(user_id),
+        )
+
     def _register_handlers(self):
         # Команды
         self.router.message.register(self.start, CommandStart())
@@ -116,7 +155,7 @@ class UserHandlers(BaseHandler):
     async def start(self, message: Message):
         telegram_id = message.from_user.id
         await self.user_service.get_or_create_user(telegram_id)
-        welcome_message = build_welcome_message(self.support_service.get_support_contact_info())
+        welcome_message = build_welcome_message()
         await message.answer(welcome_message, reply_markup=get_user_main_keyboard(telegram_id))
 
     # === Поддержка ===
@@ -248,28 +287,31 @@ class UserHandlers(BaseHandler):
             ],
             [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_main")],
         ])
-        await callback.message.edit_text("💎 Выберите тип подписки:", reply_markup=markup)
+        await callback.message.edit_text("💎 Выберите формат подписки:", reply_markup=markup)
 
 
     # === Покупка ежемесячной ===
     async def handle_choose_monthly(self, callback: CallbackQuery, state: FSMContext):
         telegram_id = callback.from_user.id
-        cur = await self.subscription_service.get_subscription_info(telegram_id)
-        if cur.success and cur.subscription_info and cur.subscription_info.is_active:
+        cur = await self._fetch_subscription_for_purchase(telegram_id, callback.message.answer)
+        if cur is None:
+            return
+
+        if cur.subscription_info and cur.subscription_info.is_active:
             sub_type = detect_subscription_type(cur.subscription_info)
             if sub_type == "traffic":
                 await callback.message.answer(
-                    "❌ У вас активен трафиковый тариф — вы не можете оформить месячную подписку пока он активен. "
-                    "Для смены тарифа обратитесь в поддержку."
+                    "❌ У вас уже активен тариф по трафику. Оформить месячную подписку можно после его завершения. "
+                    "Если хотите сменить тариф раньше — напишите в поддержку."
                 )
-                await callback.message.answer("Возвращаю в меню.", reply_markup=get_user_main_keyboard(telegram_id))
+                await self._send_main_menu(callback.message.answer, telegram_id)
                 return
 
         await state.set_state(PurchaseStates.choosing_months)
         back_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 Отмена", callback_data="back_to_main")]])
         await callback.message.edit_text(
-            f"📅 На сколько месяцев хотите купить подписку?\n"
-            f"💰 Цена: {config.STAR_PRICE_PER_MONTH}⭐ за 1 месяц\n"
+            f"📅 На сколько месяцев хотите оформить подписку?\n"
+            f"💰 Стоимость: {config.STAR_PRICE_PER_MONTH}⭐ за месяц\n"
             f"Введите число от 1 до 12:",
             reply_markup=back_kb,
         )
@@ -277,22 +319,25 @@ class UserHandlers(BaseHandler):
     # === Покупка по трафику ===
     async def handle_choose_traffic(self, callback: CallbackQuery, state: FSMContext):
         telegram_id = callback.from_user.id
-        cur = await self.subscription_service.get_subscription_info(telegram_id)
-        if cur.success and cur.subscription_info and cur.subscription_info.is_active:
+        cur = await self._fetch_subscription_for_purchase(telegram_id, callback.message.answer)
+        if cur is None:
+            return
+
+        if cur.subscription_info and cur.subscription_info.is_active:
             sub_type = detect_subscription_type(cur.subscription_info)
             if sub_type == "monthly":
                 await callback.message.answer(
-                    "❌ У вас активна помесячная подписка — докупить ГБ нельзя до её окончания. "
-                    "Для смены тарифа обратитесь в поддержку."
+                    "❌ У вас уже есть активная месячная подписка. Добавить ГБ можно после её завершения. "
+                    "Если хотите перейти на тариф по трафику — напишите в поддержку."
                 )
-                await callback.message.answer("Возвращаю в меню.", reply_markup=get_user_main_keyboard(telegram_id))
+                await self._send_main_menu(callback.message.answer, telegram_id)
                 return
 
         await state.set_state(PurchaseStates.choosing_traffic)
         back_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 Отмена", callback_data="back_to_main")]])
         await callback.message.edit_text(
-            f"💾 Сколько ГБ вы хотите купить?\n"
-            f"💰 Цена: {config.STAR_PRICE_PER_GB}⭐ за 1 ГБ\n"
+            f"💾 Сколько ГБ вы хотите приобрести?\n"
+            f"💰 Стоимость: {config.STAR_PRICE_PER_GB}⭐ за 1 ГБ\n"
             f"Введите число от 1 до 100:",
             reply_markup=back_kb,
         )
@@ -303,13 +348,17 @@ class UserHandlers(BaseHandler):
             return
         telegram_id = message.from_user.id
 
-        cur = await self.subscription_service.get_subscription_info(telegram_id)
-        if cur.success and cur.subscription_info and cur.subscription_info.is_active:
+        cur = await self._fetch_subscription_for_purchase(telegram_id, message.answer, state)
+        if cur is None:
+            return
+
+        if cur.subscription_info and cur.subscription_info.is_active:
             sub_type = detect_subscription_type(cur.subscription_info)
             if sub_type == "traffic":
-                await message.answer("❌ У вас активен трафиковый тариф — продление помесячной подписки недоступно.")
-                await state.clear()
-                await message.answer("Возвращаю в меню.", reply_markup=get_user_main_keyboard(telegram_id))
+                await message.answer(
+                    "❌ У вас активен тариф по трафику. Продлить месячную подписку получится после его завершения."
+                )
+                await self._send_main_menu(message.answer, telegram_id, state)
                 return
 
         try:
@@ -339,13 +388,17 @@ class UserHandlers(BaseHandler):
             return
         telegram_id = message.from_user.id
 
-        cur = await self.subscription_service.get_subscription_info(telegram_id)
-        if cur.success and cur.subscription_info and cur.subscription_info.is_active:
+        cur = await self._fetch_subscription_for_purchase(telegram_id, message.answer, state)
+        if cur is None:
+            return
+
+        if cur.subscription_info and cur.subscription_info.is_active:
             sub_type = detect_subscription_type(cur.subscription_info)
             if sub_type == "monthly":
-                await message.answer("❌ У вас активна месячная подписка — докупить ГБ нельзя до её окончания.")
-                await state.clear()
-                await message.answer("Возвращаю в меню.", reply_markup=get_user_main_keyboard(telegram_id))
+                await message.answer(
+                    "❌ У вас активна месячная подписка. Добавить ГБ можно после её завершения."
+                )
+                await self._send_main_menu(message.answer, telegram_id, state)
                 return
 
         try:
@@ -451,7 +504,7 @@ class UserHandlers(BaseHandler):
     async def handle_back_to_main(self, callback: CallbackQuery, state: FSMContext):
         await state.clear()
         user_id = callback.from_user.id
-        welcome_message = build_welcome_message(self.support_service.get_support_contact_info())
+        welcome_message = build_welcome_message()
         await callback.message.edit_text(welcome_message, reply_markup=get_user_main_keyboard(user_id))
 
     # === Вывод подписки ===
