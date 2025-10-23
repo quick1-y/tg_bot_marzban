@@ -27,12 +27,29 @@ def get_support_confirmation_keyboard():
 def get_support_tickets_keyboard():
     """Меню тикетов поддержки (для саппорта и админов)"""
     keyboard = [
-        [InlineKeyboardButton(text="📋 Список открытых тикетов", callback_data="support_tickets_list")],
+        [InlineKeyboardButton(text="📋 Список тикетов", callback_data="support_tickets_list")],
         [InlineKeyboardButton(text="🔍 Поиск тикета по ID", callback_data="support_ticket_search")],
         [InlineKeyboardButton(text="📊 Статистика тикетов", callback_data="support_tickets_stats")],
         [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_main_from_tickets")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_support_tickets_pagination_keyboard(offset: int, total: int, page_size: int = 10) -> InlineKeyboardMarkup:
+    """Клавиатура для постраничного просмотра тикетов поддержки"""
+    buttons = []
+
+    if offset + page_size < total:
+        next_offset = offset + page_size
+        buttons.append([
+            InlineKeyboardButton(
+                text="▶️ Показать ещё",
+                callback_data=f"support_tickets_list:{next_offset}"
+            )
+        ])
+
+    buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="admin_support_tickets")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
 def get_user_tickets_list_keyboard(tickets):

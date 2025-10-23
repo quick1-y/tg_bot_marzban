@@ -7,7 +7,8 @@ from presentation.keyboards import (
     get_admin_main_keyboard,
     get_admin_users_keyboard,
     get_pagination_keyboard,
-    get_support_tickets_keyboard
+    get_support_tickets_keyboard,
+    get_support_tickets_pagination_keyboard,
 )
 from infrastructure.marzban.api_client import MarzbanAPIClient
 from domain.services.support_service import SupportService
@@ -131,8 +132,10 @@ class AdminHandlers(BaseHandler):
 
     async def _handle_support_callbacks(self, callback: CallbackQuery, data: str):
         """Обработчик callback'ов поддержки"""
-        if data == "support_tickets_list":
-            await self._show_support_tickets_list(callback)
+        if data.startswith("support_tickets_list"):
+            parts = data.split(":", maxsplit=1)
+            offset = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
+            await self._show_support_tickets_list(callback, offset)
         elif data == "support_ticket_search":
             await callback.answer("🔍 Функция поиска тикетов в разработке", show_alert=True)
         elif data == "support_tickets_stats":
@@ -140,7 +143,7 @@ class AdminHandlers(BaseHandler):
         else:
             await callback.answer("⏳ Функция в разработке", show_alert=True)
 
-    async def _show_support_tickets_list(self, callback: CallbackQuery):
+    async def _show_support_tickets_list(self, callback: CallbackQuery, offset: int = 0):
         """Показ списка тикетов поддержки"""
         try:
             user_id = callback.from_user.id
@@ -153,27 +156,42 @@ class AdminHandlers(BaseHandler):
                 )
                 return
 
+            total_tickets = len(user_tickets)
+            page_size = 10
+            offset = max(offset, 0)
+
+            if offset >= total_tickets:
+                offset = max(total_tickets - page_size, 0)
+
+            current_slice = user_tickets[offset:offset + page_size]
+
             message = "📋 **Список ваших тикетов поддержки**\n\n"
 
-            for i, ticket in enumerate(user_tickets[:10], 1):
+            for ticket in current_slice:
                 status_icon = "🟢" if ticket.status == "open" else "🔴"
                 created_date = ticket.created_at.strftime("%d.%m.%Y %H:%M") if ticket.created_at else "N/A"
+                preview = ticket.message or ""
+                preview = (preview[:50] + "...") if len(preview) > 50 else preview
                 message += (
                     f"{status_icon} **Тикет #{ticket.id}**\n"
                     f"📅 {created_date}\n"
-                    f"📝 {ticket.message[:50]}...\n"
+                    f"📝 {preview}\n"
                     f"👤 {ticket.user_name}\n\n"
                 )
 
-            if len(user_tickets) > 10:
-                message += f"ℹ️ Показано 10 из {len(user_tickets)} тикетов\n\n"
+            if current_slice:
+                start_number = offset + 1
+                end_number = offset + len(current_slice)
+                message += f"ℹ️ Показаны тикеты {start_number}–{end_number} из {total_tickets}\n\n"
+            else:
+                message += "ℹ️ Больше тикетов для отображения нет\n\n"
 
             message += "Для просмотра деталей тикета используйте поиск по ID"
 
             await callback.message.edit_text(
                 message,
                 parse_mode="Markdown",
-                reply_markup=get_support_tickets_keyboard()  # Обновлено
+                reply_markup=get_support_tickets_pagination_keyboard(offset, total_tickets, page_size)
             )
 
         except Exception as e:
