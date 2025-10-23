@@ -1625,9 +1625,9 @@ class AdminHandlers(BaseHandler):
 
             cores = stats.get('cores', 1)
             cpu_usage = stats.get('cpu_usage', 0)
-            ram_usage = stats.get('ram_usage', 0)
-            ram_total = stats.get('ram_total', 1)
-            ram_usage_percent = (ram_usage / ram_total) * 100
+            ram_usage = stats.get('ram_usage', 0) or 0
+            ram_total = stats.get('ram_total', 1) or 1
+            ram_usage_percent = (ram_usage / ram_total * 100) if ram_total else 0
 
             message = (
                 "📊 **Системная статистика**\n\n"
@@ -2005,16 +2005,25 @@ class AdminHandlers(BaseHandler):
             nodes = await self.marzban_client.get_nodes()
 
             message = "🌐 **Список узлов**\n\n"
-            for node in nodes:
-                status = "🟢 Онлайн" if node.get('status', 'healthy') == 'healthy' else "🔴 Офлайн"
-                message += f"{status} {node.get('name', 'N/A')}\n"
-                message += f"   📍 {node.get('address', 'N/A')}\n"
-                message += f"   👥 Пользователей: {node.get('user_count', 0)}\n\n"
+            if not nodes:
+                message += "Пока нет доступных узлов."
+            else:
+                for node in nodes:
+                    status = "🟢 Онлайн" if node.get('status', 'healthy') == 'healthy' else "🔴 Офлайн"
+                    message += f"{status} {node.get('name', 'N/A')}\n"
+                    message += f"   📍 {node.get('address', 'N/A')}\n"
+                    message += f"   👥 Пользователей: {node.get('user_count', 0)}\n\n"
+
+            keyboard = InlineKeyboardMarkup(
+                inline_keyboard=[[InlineKeyboardButton(text="🔙 Назад", callback_data="admin_back")]]
+            )
 
             await callback.message.edit_text(
                 message,
-                parse_mode="Markdown"
+                parse_mode="Markdown",
+                reply_markup=keyboard
             )
+            await callback.answer()
 
         except Exception as e:
             await callback.message.edit_text(f"❌ Ошибка получения узлов: {str(e)}")
