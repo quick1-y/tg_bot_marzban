@@ -537,10 +537,37 @@ class UserHandlers(BaseHandler):
             reply_markup=get_support_keyboard()
         )
 
+    @staticmethod
+    def _build_ticket_text(ticket) -> str:
+        created_at = getattr(ticket, "created_at", None)
+        created = created_at.strftime('%d.%m.%Y %H:%M') if created_at else "—"
+        status_open = ticket.status == "open"
+        status_icon = "🟢" if status_open else "🔒"
+
+        text = (
+            f"{status_icon} <b>Тикет #{ticket.id}</b>\n"
+            f"🕒 {created}\n"
+            f"💬 {ticket.message}\n"
+        )
+
+        if getattr(ticket, "response", None):
+            text += f"📣 Ответ: {ticket.response}\n"
+
+        text += f"📌 Статус: {'Открыт' if status_open else 'Закрыт'}"
+        return text
+
+    @staticmethod
+    def _build_ticket_markup(ticket) -> Optional[InlineKeyboardMarkup]:
+        if ticket.status != "open":
+            return None
+
+        return InlineKeyboardMarkup(
+            inline_keyboard=[[InlineKeyboardButton(text="❌ Закрыть тикет", callback_data=f"close_ticket:{ticket.id}")]]
+        )
+
     # === Мои обращения ===
     async def handle_user_tickets(self, callback: CallbackQuery, state: FSMContext):
         from presentation.keyboards.support_keyboards import get_support_keyboard
-        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
         await state.clear()
         telegram_id = callback.from_user.id
@@ -555,28 +582,16 @@ class UserHandlers(BaseHandler):
 
         # Формируем список сообщений (каждый тикет — отдельный блок)
         for ticket in tickets:
-            status_icon = "🟢" if ticket.status == "open" else "🔒"
-            text = (
-                f"{status_icon} <b>Тикет #{ticket.id}</b>\n"
-                f"🕒 {ticket.created_at.strftime('%d.%m.%Y %H:%M')}\n"
-                f"💬 {ticket.message}\n"
-            )
-            if getattr(ticket, "response", None):
-                text += f"📣 Ответ: {ticket.response}\n"
+            text = self._build_ticket_text(ticket)
+            markup = self._build_ticket_markup(ticket)
 
-            text += f"📌 Статус: {'Открыт' if ticket.status == 'open' else 'Закрыт'}"
-
-            # Кнопки под каждым тикетом
-            buttons = []
-            if ticket.status == "open":
-                buttons.append(
-                    [InlineKeyboardButton(text="❌ Закрыть тикет", callback_data=f"close_ticket:{ticket.id}")]
-                )
-            buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_main")])
-            markup = InlineKeyboardMarkup(inline_keyboard=buttons)
-
-            # Отправляем каждый тикет отдельным сообщением
             await callback.message.answer(text, reply_markup=markup, parse_mode="HTML")
+
+        # Отдельным сообщением показываем меню поддержки
+        await callback.message.answer(
+            "Главное меню поддержки:",
+            reply_markup=get_support_keyboard()
+        )
 
         # Удаляем старое сообщение с кнопкой «Мои обращения»
         try:
@@ -611,23 +626,27 @@ class UserHandlers(BaseHandler):
 
     # === Пользователь закрывает тикет ===
     async def handle_close_ticket(self, callback: CallbackQuery):
-        from presentation.keyboards.support_keyboards import get_support_keyboard
-
         try:
             _, ticket_id_str = callback.data.split(":")
             ticket_id = int(ticket_id_str)
             success = await self.support_service.close_ticket(ticket_id)
 
             if success:
-                await callback.message.edit_text(
-                    f"✅ Тикет #{ticket_id} успешно закрыт.",
-                    reply_markup=get_support_keyboard()
-                )
+                ticket = await self.support_service.get_ticket_details(ticket_id, callback.from_user.id)
+                if ticket:
+                    text = self._build_ticket_text(ticket)
+                else:
+                    text = (
+                        f"🔒 <b>Тикет #{ticket_id}</b>\n"
+                        "📌 Статус: Закрыт"
+                    )
+                await callback.message.edit_text(text, parse_mode="HTML")
+                await callback.answer("✅ Тикет закрыт")
             else:
-                await callback.message.edit_text(
+                await callback.answer(
                     f"⚠️ Не удалось закрыть тикет #{ticket_id}. Возможно, он уже закрыт.",
-                    reply_markup=get_support_keyboard()
+                    show_alert=True
                 )
         except Exception as e:
             logger.exception(f"Ошибка при закрытии тикета пользователем: {e}")
-            await callback.message.answer("❌ Произошла ошибка при закрытии тикета.")
+            await callback.answer("❌ Произошла ошибка при закрытии тикета.", show_alert=True)
