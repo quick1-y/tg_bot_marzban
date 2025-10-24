@@ -13,6 +13,9 @@ class UserService:
 
         existing_user = await self.user_repository.get_by_telegram_id(telegram_id)
         if existing_user:
+            if not existing_user.marzban_username:
+                existing_user.marzban_username = marzban_username
+                await self.user_repository.save(existing_user)
             return existing_user
 
         new_user = TelegramUser(
@@ -38,6 +41,14 @@ class UserService:
     async def update_user_subscription_type(self, telegram_id: int, subscription_type: str):
         """Обновляет тип подписки пользователя"""
         user = await self.user_repository.get_by_telegram_id(telegram_id)
-        if user:
+        if not user:
+            user = TelegramUser(
+                telegram_id=telegram_id,
+                marzban_username=f"qwqvpn_{telegram_id}",
+                subscription_type=subscription_type
+            )
+        else:
             user.subscription_type = subscription_type
-            await self.user_repository.save(user)
+            if not user.marzban_username:
+                user.marzban_username = f"qwqvpn_{telegram_id}"
+        await self.user_repository.save(user)
