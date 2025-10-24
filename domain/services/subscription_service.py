@@ -84,8 +84,9 @@ class SubscriptionService:
                     "note": f"Monthly plan {months}m, Telegram ID: {telegram_id}",
                     "status": "active"
                 })
-                await self.user_service.update_user_subscription_type(telegram_id, "monthly")
                 logger.info(f"Создана новая месячная подписка пользователю {telegram_id} на {months} мес.")
+
+            await self.user_service.update_user_subscription_type(telegram_id, "monthly")
 
             # Получаем обновлённые данные
             user_data = await self.marzban_client.get_user(username)
@@ -133,8 +134,9 @@ class SubscriptionService:
                     "note": f"Traffic plan {gb}GB, Telegram ID: {telegram_id}",
                     "status": "active",
                 })
-                await self.user_service.update_user_subscription_type(telegram_id, "traffic")
                 logger.info(f"Создан новый трафиковый тариф {gb} ГБ для пользователя {telegram_id}")
+
+            await self.user_service.update_user_subscription_type(telegram_id, "traffic")
 
             # Обновляем данные подписки
             user_data = await self.marzban_client.get_user(username)
