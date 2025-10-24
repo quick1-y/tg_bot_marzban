@@ -9,6 +9,9 @@ from presentation.keyboards import (
     get_admin_main_keyboard,
     get_admin_users_keyboard,
     get_admin_admins_keyboard,
+    get_users_add_time_keyboard,
+    get_users_add_data_keyboard,
+    get_user_search_keyboard,
     get_support_tickets_keyboard,
     get_support_tickets_pagination_keyboard,
     get_support_ticket_search_keyboard,
@@ -79,6 +82,10 @@ class MassOperationStates(StatesGroup):
     waiting_for_hours = State()
     waiting_for_traffic = State()
     waiting_for_broadcast_message = State()
+    waiting_for_hours_user = State()
+    waiting_for_hours_amount = State()
+    waiting_for_traffic_user = State()
+    waiting_for_traffic_amount = State()
 
 
 class AdminHandlers(BaseHandler):
@@ -129,6 +136,10 @@ class AdminHandlers(BaseHandler):
         self.router.message.register(self._process_mass_hours_input, MassOperationStates.waiting_for_hours)
         self.router.message.register(self._process_mass_traffic_input, MassOperationStates.waiting_for_traffic)
         self.router.message.register(self._process_broadcast_message, MassOperationStates.waiting_for_broadcast_message)
+        self.router.message.register(self._process_mass_hours_user, MassOperationStates.waiting_for_hours_user)
+        self.router.message.register(self._process_mass_hours_amount, MassOperationStates.waiting_for_hours_amount)
+        self.router.message.register(self._process_mass_traffic_user, MassOperationStates.waiting_for_traffic_user)
+        self.router.message.register(self._process_mass_traffic_amount, MassOperationStates.waiting_for_traffic_amount)
         self.router.message.register(self._process_ticket_search_input, SupportTicketStates.waiting_for_ticket_id)
         self.router.message.register(self._process_ticket_reply_message, SupportTicketStates.waiting_for_reply_message)
         self.router.callback_query.register(self.admin_callback_handler, F.data.startswith("admin_"))
@@ -175,6 +186,39 @@ class AdminHandlers(BaseHandler):
             if page_str.isdigit():
                 return username, int(page_str)
         return payload, 0
+
+    @staticmethod
+    def _simple_back_keyboard(back_callback: str, cancel_callback: Optional[str] = None) -> InlineKeyboardMarkup:
+        buttons = [
+            [InlineKeyboardButton(text="🔙 Назад", callback_data=back_callback)]
+        ]
+        if cancel_callback:
+            buttons[0].append(InlineKeyboardButton(text="❌ Отмена", callback_data=cancel_callback))
+        return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    @staticmethod
+    def _parse_user_edit_callback(data: str, prefix: str, include_choice: bool = True) -> tuple[str, int, Optional[str]]:
+        payload = data[len(prefix):] if data.startswith(prefix) else ""
+        parts = payload.split(":") if payload else []
+        username = parts[0] if parts else ""
+        page = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
+        choice = parts[2] if include_choice and len(parts) > 2 else None
+        return username, page, choice
+
+    async def _send_edit_step(
+        self,
+        text: str,
+        markup: InlineKeyboardMarkup,
+        *,
+        callback: Optional[CallbackQuery] = None,
+        message: Optional[Message] = None,
+        parse_mode: str = "HTML",
+    ):
+        if callback is not None:
+            await callback.message.edit_text(text, parse_mode=parse_mode, reply_markup=markup)
+            await callback.answer()
+        elif message is not None:
+            await message.answer(text, parse_mode=parse_mode, reply_markup=markup)
 
     @staticmethod
     def _format_data_limit(limit: Optional[int]) -> str:
@@ -331,30 +375,112 @@ class AdminHandlers(BaseHandler):
             elif data == "users_search":
                 await state.set_state(UserSearchStates.waiting_for_username)
                 await callback.message.edit_text(
-                    "🔍 Введите имя пользователя Marzban (или напишите «отмена»):"
+                    "🔍 Введите имя пользователя Marzban:\n\nНажмите «Назад», чтобы отменить поиск.",
+                    reply_markup=get_user_search_keyboard()
                 )
                 await callback.answer()
+            elif data == "users_search_cancel":
+                await state.clear()
+                await self._show_users_menu(callback)
             elif data == "user_add":
                 await state.clear()
                 await self._start_user_creation(callback, state)
             elif data == "users_add_time":
+                await state.clear()
+                await callback.message.edit_text(
+                    "⏰ Выберите режим добавления времени:",
+                    reply_markup=get_users_add_time_keyboard()
+                )
+                await callback.answer()
+            elif data == "users_add_time_all":
                 await state.set_state(MassOperationStates.waiting_for_hours)
                 await callback.message.edit_text(
-                    "⏰ Укажите количество часов для продления подписки всех пользователей с месячным тарифом (или «отмена»):"
+                    "⏰ Укажите количество часов для продления подписки всех пользователей с месячным тарифом:",
+                    reply_markup=self._simple_back_keyboard("users_add_time", "admin_users")
+                )
+                await callback.answer()
+            elif data == "users_add_time_user":
+                await state.set_state(MassOperationStates.waiting_for_hours_user)
+                await state.update_data(mass_operation=None)
+                await callback.message.edit_text(
+                    "👤 Введите имя пользователя Marzban, которому нужно добавить время:",
+                    reply_markup=self._simple_back_keyboard("users_add_time", "admin_users")
                 )
                 await callback.answer()
             elif data == "users_add_data":
+                await state.clear()
+                await callback.message.edit_text(
+                    "💽 Выберите режим добавления трафика:",
+                    reply_markup=get_users_add_data_keyboard()
+                )
+                await callback.answer()
+            elif data == "users_add_data_all":
                 await state.set_state(MassOperationStates.waiting_for_traffic)
                 await callback.message.edit_text(
-                    "💽 Укажите количество ГБ, которое добавить к лимиту всех пользователей с ограничением (или «отмена»):"
+                    "💽 Укажите количество ГБ, которое добавить к лимиту всех пользователей с ограничением:",
+                    reply_markup=self._simple_back_keyboard("users_add_data", "admin_users")
+                )
+                await callback.answer()
+            elif data == "users_add_data_user":
+                await state.set_state(MassOperationStates.waiting_for_traffic_user)
+                await state.update_data(mass_operation=None)
+                await callback.message.edit_text(
+                    "👤 Введите имя пользователя Marzban, которому нужно добавить трафик:",
+                    reply_markup=self._simple_back_keyboard("users_add_data", "admin_users")
                 )
                 await callback.answer()
             elif data == "users_broadcast":
                 await state.set_state(MassOperationStates.waiting_for_broadcast_message)
                 await callback.message.edit_text(
-                    "📣 Введите текст рассылки для всех пользователей (или «отмена»):"
+                    "📣 Введите текст рассылки для всех пользователей:",
+                    reply_markup=self._simple_back_keyboard("admin_users")
                 )
                 await callback.answer()
+            elif data.startswith("users_edit_status:"):
+                username, page, choice = self._parse_user_edit_callback(data, "users_edit_status:")
+                await self._handle_user_edit_status(callback, state, username, page, choice)
+            elif data.startswith("users_edit_limit:"):
+                username, page, choice = self._parse_user_edit_callback(data, "users_edit_limit:")
+                await self._handle_user_edit_limit(callback, state, username, page, choice)
+            elif data.startswith("users_edit_limit_menu:"):
+                username, page, _ = self._parse_user_edit_callback(data, "users_edit_limit_menu:", include_choice=False)
+                context = await self._get_edit_user_context(state, username)
+                if not context:
+                    await callback.answer("Контекст редактирования потерян", show_alert=True)
+                    await self._show_user_details(callback, username, page)
+                else:
+                    await state.set_state(UserEditStates.waiting_for_limit)
+                    await self._prompt_user_limit_choice(callback=callback, context=context)
+            elif data.startswith("users_edit_reset:"):
+                username, page, choice = self._parse_user_edit_callback(data, "users_edit_reset:")
+                await self._handle_user_edit_reset(callback, state, username, page, choice)
+            elif data.startswith("users_edit_expire:"):
+                username, page, choice = self._parse_user_edit_callback(data, "users_edit_expire:")
+                await self._handle_user_edit_expire(callback, state, username, page, choice)
+            elif data.startswith("users_edit_expire_menu:"):
+                username, page, _ = self._parse_user_edit_callback(data, "users_edit_expire_menu:", include_choice=False)
+                context = await self._get_edit_user_context(state, username)
+                if not context:
+                    await callback.answer("Контекст редактирования потерян", show_alert=True)
+                    await self._show_user_details(callback, username, page)
+                else:
+                    await state.set_state(UserEditStates.waiting_for_expire)
+                    await self._prompt_user_expire_choice(callback=callback, context=context)
+            elif data.startswith("users_edit_note:"):
+                username, page, choice = self._parse_user_edit_callback(data, "users_edit_note:")
+                await self._handle_user_edit_note(callback, state, username, page, choice)
+            elif data.startswith("users_edit_note_menu:"):
+                username, page, _ = self._parse_user_edit_callback(data, "users_edit_note_menu:", include_choice=False)
+                context = await self._get_edit_user_context(state, username)
+                if not context:
+                    await callback.answer("Контекст редактирования потерян", show_alert=True)
+                    await self._show_user_details(callback, username, page)
+                else:
+                    await state.set_state(UserEditStates.waiting_for_note)
+                    await self._prompt_user_note_choice(callback=callback, context=context)
+            elif data.startswith("users_edit_cancel:"):
+                username, page, _ = self._parse_user_edit_callback(data, "users_edit_cancel:", include_choice=False)
+                await self._cancel_user_edit(callback, state, username, page)
             elif data.startswith("admins_list:"):
                 page = self._extract_page_from_callback(data)
                 await state.clear()
@@ -1221,6 +1347,154 @@ class AdminHandlers(BaseHandler):
         )
         await self._show_users_menu_from_message(message)
 
+    async def _process_mass_hours_user(self, message: Message, state: FSMContext):
+        text = message.text or ""
+        if self._is_cancel_message(text):
+            await self._cancel_operation(message, state, "users")
+            return
+
+        username = text.strip()
+        if not username:
+            await message.answer("Имя пользователя не может быть пустым. Попробуйте снова:")
+            return
+
+        try:
+            user = await self.marzban_client.get_user(username)
+        except Exception as e:
+            logger.error(f"Ошибка поиска пользователя {username}: {e}")
+            await message.answer("⚠️ Не удалось проверить пользователя. Попробуйте еще раз позже.")
+            return
+
+        if not user:
+            await message.answer("Пользователь не найден. Попробуйте снова:")
+            return
+
+        await state.update_data(mass_operation={"type": "hours", "username": username})
+        await state.set_state(MassOperationStates.waiting_for_hours_amount)
+        await message.answer(
+            f"Укажите количество часов, которое нужно добавить пользователю {username}:",
+            reply_markup=self._simple_back_keyboard("users_add_time_user", "admin_users")
+        )
+
+    async def _process_mass_hours_amount(self, message: Message, state: FSMContext):
+        text = message.text or ""
+        if self._is_cancel_message(text):
+            await self._cancel_operation(message, state, "users")
+            return
+
+        cleaned = text.replace(",", ".").strip()
+        try:
+            hours = float(cleaned)
+        except ValueError:
+            await message.answer("Введите положительное число часов (например, 12 или 24.5):")
+            return
+
+        if hours <= 0:
+            await message.answer("Количество часов должно быть больше нуля. Попробуйте снова:")
+            return
+
+        data = await state.get_data()
+        operation = data.get("mass_operation") or {}
+        username = operation.get("username")
+        if not username:
+            await self._cancel_operation(message, state, "users")
+            return
+
+        success, new_expire = await self._add_hours_to_user(username, hours)
+        if not success:
+            await message.answer("❌ Не удалось добавить время пользователю. Попробуйте позже.")
+            await state.clear()
+            return
+
+        hours_text = format(hours, "g")
+        expire_text = self._format_expire(new_expire)
+        notified = await self._notify_user_bonus(
+            message.bot,
+            username,
+            f"🎁 Вам добавлено {hours_text} ч. бесплатного времени!\nНовый срок действия: {expire_text}",
+        )
+
+        status_text = "📬 Уведомление отправлено." if notified else "⚠️ Не удалось уведомить пользователя."
+        await message.answer(
+            f"✅ Пользователю {username} добавлено {hours_text} ч.\nНовый срок действия: {expire_text}.\n{status_text}"
+        )
+        await state.clear()
+        await self._show_users_menu_from_message(message)
+
+    async def _process_mass_traffic_user(self, message: Message, state: FSMContext):
+        text = message.text or ""
+        if self._is_cancel_message(text):
+            await self._cancel_operation(message, state, "users")
+            return
+
+        username = text.strip()
+        if not username:
+            await message.answer("Имя пользователя не может быть пустым. Попробуйте снова:")
+            return
+
+        try:
+            user = await self.marzban_client.get_user(username)
+        except Exception as e:
+            logger.error(f"Ошибка поиска пользователя {username}: {e}")
+            await message.answer("⚠️ Не удалось проверить пользователя. Попробуйте еще раз позже.")
+            return
+
+        if not user:
+            await message.answer("Пользователь не найден. Попробуйте снова:")
+            return
+
+        await state.update_data(mass_operation={"type": "traffic", "username": username})
+        await state.set_state(MassOperationStates.waiting_for_traffic_amount)
+        await message.answer(
+            f"Введите объем трафика в ГБ, который нужно добавить пользователю {username}:",
+            reply_markup=self._simple_back_keyboard("users_add_data_user", "admin_users")
+        )
+
+    async def _process_mass_traffic_amount(self, message: Message, state: FSMContext):
+        text = message.text or ""
+        if self._is_cancel_message(text):
+            await self._cancel_operation(message, state, "users")
+            return
+
+        cleaned = text.replace(",", ".").strip()
+        try:
+            amount = float(cleaned)
+        except ValueError:
+            await message.answer("Введите положительное число ГБ (например, 10 или 5.5):")
+            return
+
+        if amount <= 0:
+            await message.answer("Количество ГБ должно быть больше нуля. Попробуйте снова:")
+            return
+
+        data = await state.get_data()
+        operation = data.get("mass_operation") or {}
+        username = operation.get("username")
+        if not username:
+            await self._cancel_operation(message, state, "users")
+            return
+
+        success, new_limit = await self._add_traffic_to_user(username, amount)
+        if not success:
+            await message.answer("❌ Не удалось добавить трафик пользователю. Попробуйте позже.")
+            await state.clear()
+            return
+
+        amount_text = format(amount, "g")
+        limit_text = self._format_data_limit(new_limit)
+        notified = await self._notify_user_bonus(
+            message.bot,
+            username,
+            f"🎁 Вам добавлено {amount_text} ГБ бесплатного трафика!\nТеперь доступно: {limit_text}",
+        )
+
+        status_text = "📬 Уведомление отправлено." if notified else "⚠️ Не удалось уведомить пользователя."
+        await message.answer(
+            f"✅ Пользователю {username} добавлено {amount_text} ГБ.\nНовый лимит: {limit_text}.\n{status_text}"
+        )
+        await state.clear()
+        await self._show_users_menu_from_message(message)
+
     async def _process_broadcast_message(self, message: Message, state: FSMContext):
         text = message.text or ""
         if self._is_cancel_message(text):
@@ -1309,6 +1583,96 @@ class AdminHandlers(BaseHandler):
 
         return updated, errors
 
+    async def _add_hours_to_user(self, username: str, hours: float) -> tuple[bool, Optional[int]]:
+        try:
+            user = await self.marzban_client.get_user(username)
+        except Exception as e:
+            logger.error(f"Не удалось получить пользователя {username} при добавлении времени: {e}")
+            return False, None
+
+        if not user:
+            return False, None
+
+        expire = user.get("expire")
+        now_ts = int(datetime.utcnow().timestamp())
+        base = now_ts
+        if isinstance(expire, (int, float)) and expire:
+            expire_int = int(expire)
+            base = max(expire_int, now_ts)
+
+        try:
+            delta_seconds = int(hours * 3600)
+        except Exception:
+            return False, None
+
+        new_expire = base + max(delta_seconds, 0)
+        try:
+            await self.marzban_client.modify_user(username, {"expire": new_expire})
+        except Exception as e:
+            logger.error(f"Не удалось продлить пользователя {username}: {e}")
+            return False, None
+
+        return True, new_expire
+
+    async def _add_traffic_to_user(self, username: str, amount_gb: float) -> tuple[bool, Optional[int]]:
+        try:
+            user = await self.marzban_client.get_user(username)
+        except Exception as e:
+            logger.error(f"Не удалось получить пользователя {username} при добавлении трафика: {e}")
+            return False, None
+
+        if not user:
+            return False, None
+
+        try:
+            delta_bytes = int(amount_gb * (1024 ** 3))
+        except Exception:
+            return False, None
+
+        current_limit = user.get("data_limit") or 0
+        try:
+            current_limit = int(current_limit)
+        except Exception:
+            current_limit = 0
+
+        new_limit = max(current_limit + max(delta_bytes, 0), 0)
+        try:
+            await self.marzban_client.modify_user(username, {"data_limit": new_limit})
+        except Exception as e:
+            logger.error(f"Не удалось обновить лимит пользователя {username}: {e}")
+            return False, None
+
+        return True, new_limit
+
+    async def _notify_user_bonus(self, bot, username: str, message_text: str) -> bool:
+        telegram_id = None
+
+        try:
+            user = await self.user_service.get_user_by_marzban_username(username)
+        except Exception as e:
+            logger.error(f"Не удалось получить Telegram пользователя {username}: {e}")
+            user = None
+
+        if user and user.telegram_id:
+            telegram_id = user.telegram_id
+        else:
+            try:
+                marzban_user = await self.marzban_client.get_user(username)
+                if marzban_user and marzban_user.get("telegram_id"):
+                    telegram_id = marzban_user.get("telegram_id")
+            except Exception as e:
+                logger.error(f"Не удалось получить данные пользователя {username} из Marzban: {e}")
+
+        if not telegram_id:
+            return False
+
+        try:
+            await bot.send_message(int(telegram_id), message_text)
+            return True
+        except Exception as e:
+            logger.error(f"Не удалось отправить уведомление пользователю {username}: {e}")
+            return False
+
     async def _send_broadcast(self, message: Message, content: str) -> tuple[int, int]:
         users = await self.user_service.get_all_users()
         bot = message.bot
@@ -1344,23 +1708,21 @@ class AdminHandlers(BaseHandler):
         allowed = {"active", "on_hold", "disabled"}
 
         if cleaned in {"", "skip", "пропустить"}:
-            new_status = context.get("current", {}).get("status", "active")
+            new_status = None
         elif cleaned in allowed:
             new_status = cleaned
         else:
             await message.answer("Укажите один из статусов: active, on_hold или disabled (или «пропустить»).")
             return
 
-        context.setdefault("changes", {})["status"] = new_status
+        changes = context.setdefault("changes", {})
+        if new_status is not None:
+            changes["status"] = new_status
+        else:
+            changes.pop("status", None)
         await state.update_data(edit_user=context)
         await state.set_state(UserEditStates.waiting_for_limit)
-
-        current_limit = context.get("current", {}).get("data_limit")
-        await message.answer(
-            "Текущий лимит: {}\nВведите новый лимит в ГБ (0 — безлимит) или напишите «пропустить».".format(
-                self._format_data_limit(current_limit)
-            )
-        )
+        await self._prompt_user_limit_choice(message=message, context=context)
 
     async def _process_user_edit_limit(self, message: Message, state: FSMContext):
         text = message.text or ""
@@ -1375,7 +1737,11 @@ class AdminHandlers(BaseHandler):
             return
 
         cleaned = text.strip().lower()
-        if cleaned in {"", "skip", "пропустить"}:
+        skip = cleaned in {"", "skip", "пропустить"}
+        changes = context.setdefault("changes", {})
+
+        if skip:
+            changes.pop("data_limit", None)
             limit_bytes = context.get("current", {}).get("data_limit")
         else:
             try:
@@ -1383,18 +1749,20 @@ class AdminHandlers(BaseHandler):
             except ValueError:
                 await message.answer("Введите число — количество ГБ (например, 100 или 0 для безлимита):")
                 return
+            changes["data_limit"] = limit_bytes
+            context.setdefault("current", {})["data_limit"] = limit_bytes
 
-        context.setdefault("changes", {})["data_limit"] = limit_bytes
-        context["working_limit"] = limit_bytes
         await state.update_data(edit_user=context)
-        await state.set_state(UserEditStates.waiting_for_reset_strategy)
 
-        current_strategy = context.get("current", {}).get("data_limit_reset_strategy") or "no_reset"
-        await message.answer(
-            "Текущая стратегия сброса: {}\nВведите новую стратегию (daily/weekly/monthly/no_reset) или напишите «пропустить».".format(
-                self._format_reset_strategy(current_strategy)
-            )
-        )
+        if limit_bytes == 0:
+            changes["data_limit_reset_strategy"] = "no_reset"
+            context.setdefault("current", {})["data_limit_reset_strategy"] = "no_reset"
+            await state.set_state(UserEditStates.waiting_for_expire)
+            await self._prompt_user_expire_choice(message=message, context=context)
+            return
+
+        await state.set_state(UserEditStates.waiting_for_reset_strategy)
+        await self._prompt_user_reset_strategy(message=message, context=context)
 
     async def _process_user_edit_reset_strategy(self, message: Message, state: FSMContext):
         text = message.text or ""
@@ -1428,20 +1796,16 @@ class AdminHandlers(BaseHandler):
             await message.answer("Укажите одну из стратегий: daily, weekly, monthly, no_reset или «пропустить».")
             return
 
+        changes = context.setdefault("changes", {})
         if strategy is not None:
-            context.setdefault("changes", {})["data_limit_reset_strategy"] = strategy
-        elif "data_limit_reset_strategy" not in context.get("changes", {}):
-            context.setdefault("changes", {})["data_limit_reset_strategy"] = context.get("current", {}).get("data_limit_reset_strategy")
+            changes["data_limit_reset_strategy"] = strategy
+            context.setdefault("current", {})["data_limit_reset_strategy"] = strategy
+        else:
+            changes.pop("data_limit_reset_strategy", None)
 
         await state.update_data(edit_user=context)
         await state.set_state(UserEditStates.waiting_for_expire)
-
-        current_expire = context.get("current", {}).get("expire")
-        await message.answer(
-            "Текущая дата окончания: {}\nВведите новую дату (ДД.ММ.ГГГГ или с временем) или напишите «пропустить».".format(
-                self._format_expire(current_expire)
-            )
-        )
+        await self._prompt_user_expire_choice(message=message, context=context)
 
     async def _process_user_edit_expire(self, message: Message, state: FSMContext):
         text = message.text or ""
@@ -1456,22 +1820,26 @@ class AdminHandlers(BaseHandler):
             return
 
         cleaned = text.strip().lower()
-        if cleaned in {"", "skip", "пропустить"}:
-            expire_value = context.get("current", {}).get("expire")
-        else:
+        is_skip = cleaned in {"", "skip", "пропустить"}
+        if not is_skip:
             try:
                 expire_value = self._parse_expire_input(text)
             except ValueError:
                 await message.answer("Не удалось распознать дату. Попробуйте снова (формат ДД.ММ.ГГГГ ЧЧ:ММ).")
                 return
+        else:
+            expire_value = None
 
-        context.setdefault("changes", {})["expire"] = expire_value
+        changes = context.setdefault("changes", {})
+        if is_skip:
+            changes.pop("expire", None)
+        else:
+            changes["expire"] = expire_value
+            context.setdefault("current", {})["expire"] = expire_value
+
         await state.update_data(edit_user=context)
         await state.set_state(UserEditStates.waiting_for_note)
-        current_note = context.get("current", {}).get("note") or "—"
-        await message.answer(
-            "Текущее примечание: {}\nВведите новое примечание или напишите «пропустить».".format(current_note)
-        )
+        await self._prompt_user_note_choice(message=message, context=context)
 
     async def _process_user_edit_note(self, message: Message, state: FSMContext):
         text = message.text or ""
@@ -1485,8 +1853,13 @@ class AdminHandlers(BaseHandler):
             await self._cancel_operation(message, state, "users")
             return
 
-        note = "" if text.strip().lower() in {"", "skip", "пропустить"} else text.strip()
-        context.setdefault("changes", {})["note"] = note
+        stripped = text.strip()
+        lower = stripped.lower()
+        changes = context.setdefault("changes", {})
+        if lower in {"skip", "пропустить"}:
+            changes.pop("note", None)
+        else:
+            changes["note"] = stripped
         await state.update_data(edit_user=context)
         await self._apply_user_edit_changes(message, state)
 
@@ -1930,16 +2303,282 @@ class AdminHandlers(BaseHandler):
             }
         )
         await state.set_state(UserEditStates.waiting_for_status)
-        await callback.message.edit_text(
+        await self._prompt_user_status(
+            callback,
+            context={
+                "username": username,
+                "page": page,
+                "current": current_data,
+            },
+        )
+
+    async def _get_edit_user_context(self, state: FSMContext, username: Optional[str] = None) -> Optional[dict]:
+        data = await state.get_data()
+        context = data.get("edit_user")
+        if not context:
+            return None
+        if username and context.get("username") != username:
+            return None
+        return context
+
+    async def _prompt_user_status(self, callback: CallbackQuery, context: dict):
+        username = context.get("username", "")
+        page = context.get("page", 0)
+        current_status = self._format_status((context.get("current") or {}).get("status"))
+        text = (
             "✏️ <b>Редактирование пользователя</b> <code>{}</code>\n\n"
             "Текущий статус: {}\n"
-            "Введите новый статус (active/on_hold/disabled) или напишите «пропустить».".format(
-                html.escape(username),
-                self._format_status(current_data.get("status"))
-            ),
-            parse_mode="HTML"
+            "Выберите новый статус:".format(html.escape(username), current_status)
         )
-        await callback.answer()
+        markup = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="🟢 Активный", callback_data=f"users_edit_status:{username}:{page}:active")],
+                [InlineKeyboardButton(text="⏸️ В ожидании", callback_data=f"users_edit_status:{username}:{page}:on_hold")],
+                [InlineKeyboardButton(text="🔴 Отключен", callback_data=f"users_edit_status:{username}:{page}:disabled")],
+                [InlineKeyboardButton(text="➡️ Пропустить", callback_data=f"users_edit_status:{username}:{page}:skip")],
+                [InlineKeyboardButton(text="❌ Отмена", callback_data=f"users_edit_cancel:{username}:{page}")],
+            ]
+        )
+        await self._send_edit_step(text, markup, callback=callback)
+
+    async def _prompt_user_limit_choice(self, *, callback: Optional[CallbackQuery] = None, message: Optional[Message] = None, context: dict):
+        username = context.get("username", "")
+        page = context.get("page", 0)
+        current_limit = self._format_data_limit((context.get("current") or {}).get("data_limit"))
+        text = (
+            "💾 <b>Лимит трафика</b>\n\n"
+            "Текущий лимит: {}\n"
+            "Выберите действие:".format(current_limit)
+        )
+        markup = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="♾️ Безлимит", callback_data=f"users_edit_limit:{username}:{page}:unlimited")],
+                [InlineKeyboardButton(text="✏️ Изменить", callback_data=f"users_edit_limit:{username}:{page}:custom")],
+                [InlineKeyboardButton(text="➡️ Пропустить", callback_data=f"users_edit_limit:{username}:{page}:skip")],
+                [InlineKeyboardButton(text="❌ Отмена", callback_data=f"users_edit_cancel:{username}:{page}")],
+            ]
+        )
+        await self._send_edit_step(text, markup, callback=callback, message=message)
+
+    async def _prompt_user_reset_strategy(self, *, callback: Optional[CallbackQuery] = None, message: Optional[Message] = None, context: dict):
+        username = context.get("username", "")
+        page = context.get("page", 0)
+        current_strategy = self._format_reset_strategy((context.get("current") or {}).get("data_limit_reset_strategy"))
+        text = (
+            "♻️ <b>Стратегия сброса трафика</b>\n\n"
+            "Текущая стратегия: {}\n"
+            "Выберите новую стратегию:".format(current_strategy)
+        )
+        buttons = [
+            [InlineKeyboardButton(text="📅 Ежедневно", callback_data=f"users_edit_reset:{username}:{page}:daily")],
+            [InlineKeyboardButton(text="📆 Еженедельно", callback_data=f"users_edit_reset:{username}:{page}:weekly")],
+            [InlineKeyboardButton(text="🗓 Ежемесячно", callback_data=f"users_edit_reset:{username}:{page}:monthly")],
+            [InlineKeyboardButton(text="♾️ Без сброса", callback_data=f"users_edit_reset:{username}:{page}:no_reset")],
+            [InlineKeyboardButton(text="➡️ Пропустить", callback_data=f"users_edit_reset:{username}:{page}:skip")],
+            [InlineKeyboardButton(text="❌ Отмена", callback_data=f"users_edit_cancel:{username}:{page}")],
+        ]
+        markup = InlineKeyboardMarkup(inline_keyboard=buttons)
+        await self._send_edit_step(text, markup, callback=callback, message=message)
+
+    async def _prompt_user_expire_choice(self, *, callback: Optional[CallbackQuery] = None, message: Optional[Message] = None, context: dict):
+        username = context.get("username", "")
+        page = context.get("page", 0)
+        current_expire = self._format_expire((context.get("current") or {}).get("expire"))
+        text = (
+            "⏳ <b>Срок действия</b>\n\n"
+            "Текущая дата окончания: {}\n"
+            "Выберите действие:".format(current_expire)
+        )
+        markup = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="♾️ Бессрочно", callback_data=f"users_edit_expire:{username}:{page}:permanent")],
+                [InlineKeyboardButton(text="✏️ Изменить", callback_data=f"users_edit_expire:{username}:{page}:custom")],
+                [InlineKeyboardButton(text="➡️ Пропустить", callback_data=f"users_edit_expire:{username}:{page}:skip")],
+                [InlineKeyboardButton(text="❌ Отмена", callback_data=f"users_edit_cancel:{username}:{page}")],
+            ]
+        )
+        await self._send_edit_step(text, markup, callback=callback, message=message)
+
+    async def _prompt_user_note_choice(self, *, callback: Optional[CallbackQuery] = None, message: Optional[Message] = None, context: dict):
+        username = context.get("username", "")
+        page = context.get("page", 0)
+        current_note = (context.get("current") or {}).get("note") or "—"
+        text = (
+            "🗒 <b>Примечание</b>\n\n"
+            "Текущее примечание: {}\n"
+            "Выберите действие:".format(html.escape(current_note))
+        )
+        markup = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="✏️ Изменить", callback_data=f"users_edit_note:{username}:{page}:custom")],
+                [InlineKeyboardButton(text="🧹 Очистить", callback_data=f"users_edit_note:{username}:{page}:clear")],
+                [InlineKeyboardButton(text="➡️ Пропустить", callback_data=f"users_edit_note:{username}:{page}:skip")],
+                [InlineKeyboardButton(text="❌ Отмена", callback_data=f"users_edit_cancel:{username}:{page}")],
+            ]
+        )
+        await self._send_edit_step(text, markup, callback=callback, message=message)
+
+    async def _handle_user_edit_status(self, callback: CallbackQuery, state: FSMContext, username: str, page: int, choice: Optional[str]):
+        context = await self._get_edit_user_context(state, username)
+        if not context:
+            await callback.answer("Контекст редактирования потерян", show_alert=True)
+            await self._show_user_details(callback, username, page)
+            return
+
+        changes = context.setdefault("changes", {})
+        if choice in {"active", "on_hold", "disabled"}:
+            changes["status"] = choice
+        elif choice == "skip" or choice is None:
+            changes.pop("status", None)
+        else:
+            await callback.answer("Неизвестный статус", show_alert=True)
+            return
+
+        await state.update_data(edit_user=context)
+        await state.set_state(UserEditStates.waiting_for_limit)
+        await self._prompt_user_limit_choice(callback=callback, context=context)
+
+    async def _handle_user_edit_limit(self, callback: CallbackQuery, state: FSMContext, username: str, page: int, choice: Optional[str]):
+        context = await self._get_edit_user_context(state, username)
+        if not context:
+            await callback.answer("Контекст редактирования потерян", show_alert=True)
+            await self._show_user_details(callback, username, page)
+            return
+
+        changes = context.setdefault("changes", {})
+
+        if choice == "unlimited":
+            changes["data_limit"] = 0
+            changes["data_limit_reset_strategy"] = "no_reset"
+            current_data = context.setdefault("current", {})
+            current_data.update({"data_limit": 0, "data_limit_reset_strategy": "no_reset"})
+            await state.update_data(edit_user=context)
+            await state.set_state(UserEditStates.waiting_for_expire)
+            await self._prompt_user_expire_choice(callback=callback, context=context)
+            return
+
+        if choice == "skip":
+            changes.pop("data_limit", None)
+            await state.update_data(edit_user=context)
+            await state.set_state(UserEditStates.waiting_for_reset_strategy)
+            await self._prompt_user_reset_strategy(callback=callback, context=context)
+            return
+
+        if choice == "custom":
+            await state.update_data(edit_user=context)
+            await state.set_state(UserEditStates.waiting_for_limit)
+            text = (
+                "💾 Введите новый лимит в ГБ (0 — безлимит).\n"
+                "Вы можете использовать десятичные значения."
+            )
+            markup = self._simple_back_keyboard(
+                f"users_edit_limit_menu:{username}:{page}",
+                f"users_edit_cancel:{username}:{page}"
+            )
+            await self._send_edit_step(text, markup, callback=callback, parse_mode="HTML")
+            return
+
+        await callback.answer("Неизвестный выбор", show_alert=True)
+
+    async def _handle_user_edit_reset(self, callback: CallbackQuery, state: FSMContext, username: str, page: int, choice: Optional[str]):
+        context = await self._get_edit_user_context(state, username)
+        if not context:
+            await callback.answer("Контекст редактирования потерян", show_alert=True)
+            await self._show_user_details(callback, username, page)
+            return
+
+        changes = context.setdefault("changes", {})
+        valid = {"daily", "weekly", "monthly", "no_reset"}
+        if choice in valid:
+            changes["data_limit_reset_strategy"] = choice
+        elif choice == "skip" or choice is None:
+            changes.pop("data_limit_reset_strategy", None)
+        else:
+            await callback.answer("Неизвестная стратегия", show_alert=True)
+            return
+
+        await state.update_data(edit_user=context)
+        await state.set_state(UserEditStates.waiting_for_expire)
+        await self._prompt_user_expire_choice(callback=callback, context=context)
+
+    async def _handle_user_edit_expire(self, callback: CallbackQuery, state: FSMContext, username: str, page: int, choice: Optional[str]):
+        context = await self._get_edit_user_context(state, username)
+        if not context:
+            await callback.answer("Контекст редактирования потерян", show_alert=True)
+            await self._show_user_details(callback, username, page)
+            return
+
+        changes = context.setdefault("changes", {})
+
+        if choice == "permanent":
+            changes["expire"] = None
+            await state.update_data(edit_user=context)
+            await state.set_state(UserEditStates.waiting_for_note)
+            await self._prompt_user_note_choice(callback=callback, context=context)
+            return
+
+        if choice == "skip":
+            changes.pop("expire", None)
+            await state.update_data(edit_user=context)
+            await state.set_state(UserEditStates.waiting_for_note)
+            await self._prompt_user_note_choice(callback=callback, context=context)
+            return
+
+        if choice == "custom":
+            await state.update_data(edit_user=context)
+            await state.set_state(UserEditStates.waiting_for_expire)
+            text = (
+                "⏳ Укажите новую дату окончания в формате ДД.ММ.ГГГГ или ДД.ММ.ГГГГ ЧЧ:ММ.\n"
+                "Введите 0, если хотите сделать подписку бессрочной."
+            )
+            markup = self._simple_back_keyboard(
+                f"users_edit_expire_menu:{username}:{page}",
+                f"users_edit_cancel:{username}:{page}"
+            )
+            await self._send_edit_step(text, markup, callback=callback, parse_mode="HTML")
+            return
+
+        await callback.answer("Неизвестный выбор", show_alert=True)
+
+    async def _handle_user_edit_note(self, callback: CallbackQuery, state: FSMContext, username: str, page: int, choice: Optional[str]):
+        context = await self._get_edit_user_context(state, username)
+        if not context:
+            await callback.answer("Контекст редактирования потерян", show_alert=True)
+            await self._show_user_details(callback, username, page)
+            return
+
+        changes = context.setdefault("changes", {})
+
+        if choice == "clear":
+            changes["note"] = ""
+            await state.update_data(edit_user=context)
+            await self._apply_user_edit_changes(callback.message, state)
+            await callback.answer()
+            return
+
+        if choice == "skip":
+            await state.update_data(edit_user=context)
+            await self._apply_user_edit_changes(callback.message, state)
+            await callback.answer()
+            return
+
+        if choice == "custom":
+            await state.update_data(edit_user=context)
+            await state.set_state(UserEditStates.waiting_for_note)
+            text = "📝 Введите новое примечание или оставьте пустым, чтобы удалить."
+            markup = self._simple_back_keyboard(
+                f"users_edit_note_menu:{username}:{page}",
+                f"users_edit_cancel:{username}:{page}"
+            )
+            await self._send_edit_step(text, markup, callback=callback, parse_mode="HTML")
+            return
+
+        await callback.answer("Неизвестный выбор", show_alert=True)
+
+    async def _cancel_user_edit(self, callback: CallbackQuery, state: FSMContext, username: str, page: int):
+        await state.clear()
+        await self._show_user_details(callback, username, page)
+        await callback.answer("Отменено")
 
     async def _start_admin_creation(self, callback: CallbackQuery, state: FSMContext):
         """Инициирует процесс создания администратора"""
