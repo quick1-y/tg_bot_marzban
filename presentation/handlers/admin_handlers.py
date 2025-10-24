@@ -464,32 +464,41 @@ class AdminHandlers(BaseHandler):
 
             current_slice = support_tickets[offset:offset + page_size]
 
-            message = "📋 **Список тикетов поддержки**\n\n"
+            message_lines = ["<b>📋 Список тикетов поддержки</b>", ""]
 
             for ticket in current_slice:
                 status_icon = "🟢" if ticket.status == "open" else "🔴"
                 created_date = ticket.created_at.strftime("%d.%m.%Y %H:%M") if ticket.created_at else "N/A"
                 preview = ticket.message or ""
                 preview = (preview[:50] + "...") if len(preview) > 50 else preview
-                message += (
-                    f"{status_icon} **Тикет #{ticket.id}**\n"
-                    f"📅 {created_date}\n"
-                    f"📝 {preview}\n"
-                    f"👤 {ticket.user_name} (ID: {ticket.user_id})\n\n"
+                preview = html.escape(preview)
+                user_name = html.escape(ticket.user_name or "N/A")
+                user_id = html.escape(str(ticket.user_id)) if ticket.user_id is not None else "N/A"
+                message_lines.extend(
+                    [
+                        f"{status_icon} <b>Тикет #{ticket.id}</b>",
+                        f"📅 {created_date}",
+                        f"📝 {preview}",
+                        f"👤 {user_name} (ID: {user_id})",
+                        "",
+                    ]
                 )
 
             if current_slice:
                 start_number = offset + 1
                 end_number = offset + len(current_slice)
-                message += f"ℹ️ Показаны тикеты {start_number}–{end_number} из {total_tickets}\n\n"
+                message_lines.append(f"ℹ️ Показаны тикеты {start_number}–{end_number} из {total_tickets}")
+                message_lines.append("")
             else:
-                message += "ℹ️ Больше тикетов для отображения нет\n\n"
+                message_lines.append("ℹ️ Больше тикетов для отображения нет")
+                message_lines.append("")
 
-            message += "Для просмотра деталей тикета используйте поиск по ID"
+            message_lines.append("Для просмотра деталей тикета используйте поиск по ID")
+            message = "\n".join(message_lines)
 
             await callback.message.edit_text(
                 message,
-                parse_mode="Markdown",
+                parse_mode="HTML",
                 reply_markup=get_support_tickets_pagination_keyboard(offset, total_tickets, page_size)
             )
 
