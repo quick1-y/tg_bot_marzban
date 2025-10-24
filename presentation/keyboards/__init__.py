@@ -12,7 +12,10 @@ from .support_keyboards import (
 from .admin_keyboards import (
     get_admin_main_keyboard,
     get_admin_users_keyboard,
-    get_admin_admins_keyboard
+    get_admin_admins_keyboard,
+    get_users_add_time_keyboard,
+    get_users_add_data_keyboard,
+    get_user_search_keyboard,
 )
 from .common_keyboards import (
     get_pagination_keyboard,
@@ -32,6 +35,9 @@ __all__ = [
     'get_admin_main_keyboard',
     'get_admin_users_keyboard',
     'get_admin_admins_keyboard',
+    'get_users_add_time_keyboard',
+    'get_users_add_data_keyboard',
+    'get_user_search_keyboard',
     'get_pagination_keyboard',
     'get_confirmation_keyboard'
 ]

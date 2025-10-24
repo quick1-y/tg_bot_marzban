@@ -21,8 +21,8 @@ def get_admin_users_keyboard():
         [InlineKeyboardButton(text="📋 Список пользователей", callback_data="users_list:0")],
         [InlineKeyboardButton(text="🔍 Найти пользователя", callback_data="users_search")],
         [InlineKeyboardButton(text="➕ Добавить пользователя", callback_data="user_add")],
-        [InlineKeyboardButton(text="⏰ Добавить время всем", callback_data="users_add_time")],
-        [InlineKeyboardButton(text="💽 Добавить трафик всем", callback_data="users_add_data")],
+        [InlineKeyboardButton(text="⏰ Добавить время", callback_data="users_add_time")],
+        [InlineKeyboardButton(text="💽 Добавить трафик", callback_data="users_add_data")],
         [InlineKeyboardButton(text="📣 Массовая рассылка", callback_data="users_broadcast")],
         [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_back")]
     ]
@@ -36,5 +36,30 @@ def get_admin_admins_keyboard():
         [InlineKeyboardButton(text="🔍 Найти администратора", callback_data="admins_search")],
         [InlineKeyboardButton(text="➕ Добавить администратора", callback_data="admins_add")],
         [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_back")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_users_add_time_keyboard() -> InlineKeyboardMarkup:
+    keyboard = [
+        [InlineKeyboardButton(text="👥 Всем", callback_data="users_add_time_all")],
+        [InlineKeyboardButton(text="👤 Пользователю", callback_data="users_add_time_user")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_users")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_users_add_data_keyboard() -> InlineKeyboardMarkup:
+    keyboard = [
+        [InlineKeyboardButton(text="👥 Всем", callback_data="users_add_data_all")],
+        [InlineKeyboardButton(text="👤 Пользователю", callback_data="users_add_data_user")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_users")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_user_search_keyboard() -> InlineKeyboardMarkup:
+    keyboard = [
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="users_search_cancel")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
