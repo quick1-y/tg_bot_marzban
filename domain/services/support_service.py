@@ -50,7 +50,7 @@ class SupportService:
         """Возвращает тикет по ID для администратора/саппорта"""
         return await self.support_repository.get_ticket_by_id_admin(ticket_id)
 
-    async def get_all_tickets(self, limit: int = 50) -> List[SupportTicket]:
+    async def get_all_tickets(self, limit: Optional[int] = None) -> List[SupportTicket]:
         """Возвращает список всех тикетов для административного просмотра"""
         return await self.support_repository.get_all_tickets(limit=limit)
 

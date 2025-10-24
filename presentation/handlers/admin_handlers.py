@@ -395,10 +395,10 @@ class AdminHandlers(BaseHandler):
         """Показ меню управления тикетами поддержки"""
         try:
             user_id = callback.from_user.id
-            # Получаем статистику тикетов
-            user_tickets = await self.support_service.get_user_tickets(user_id)
-            total_tickets = len(user_tickets)
-            open_tickets = len([t for t in user_tickets if t.status == "open"])
+            # Получаем статистику тикетов (для всех пользователей)
+            all_tickets = await self.support_service.get_all_tickets()
+            total_tickets = len(all_tickets)
+            open_tickets = len([t for t in all_tickets if t.status == "open"])
 
             message = (
                 "📋 **Управление тикетами поддержки**\n\n"
@@ -446,26 +446,25 @@ class AdminHandlers(BaseHandler):
     async def _show_support_tickets_list(self, callback: CallbackQuery, offset: int = 0):
         """Показ списка тикетов поддержки"""
         try:
-            user_id = callback.from_user.id
-            user_tickets = await self.support_service.get_user_tickets(user_id)
+            support_tickets = await self.support_service.get_all_tickets()
 
-            if not user_tickets:
+            if not support_tickets:
                 await callback.message.edit_text(
                     "📭 Тикеты поддержки не найдены",
                     reply_markup=get_support_tickets_keyboard()  # Обновлено
                 )
                 return
 
-            total_tickets = len(user_tickets)
+            total_tickets = len(support_tickets)
             page_size = 10
             offset = max(offset, 0)
 
             if offset >= total_tickets:
                 offset = max(total_tickets - page_size, 0)
 
-            current_slice = user_tickets[offset:offset + page_size]
+            current_slice = support_tickets[offset:offset + page_size]
 
-            message = "📋 **Список ваших тикетов поддержки**\n\n"
+            message = "📋 **Список тикетов поддержки**\n\n"
 
             for ticket in current_slice:
                 status_icon = "🟢" if ticket.status == "open" else "🔴"
@@ -476,7 +475,7 @@ class AdminHandlers(BaseHandler):
                     f"{status_icon} **Тикет #{ticket.id}**\n"
                     f"📅 {created_date}\n"
                     f"📝 {preview}\n"
-                    f"👤 {ticket.user_name}\n\n"
+                    f"👤 {ticket.user_name} (ID: {ticket.user_id})\n\n"
                 )
 
             if current_slice:
@@ -504,17 +503,16 @@ class AdminHandlers(BaseHandler):
     async def _show_support_tickets_stats(self, callback: CallbackQuery):
         """Показ статистики тикетов"""
         try:
-            user_id = callback.from_user.id
-            user_tickets = await self.support_service.get_user_tickets(user_id)
+            support_tickets = await self.support_service.get_all_tickets()
 
-            total_tickets = len(user_tickets)
-            open_tickets = len([t for t in user_tickets if t.status == "open"])
+            total_tickets = len(support_tickets)
+            open_tickets = len([t for t in support_tickets if t.status == "open"])
             closed_tickets = total_tickets - open_tickets
 
             # Группировка по месяцам
             from collections import defaultdict
             monthly_stats = defaultdict(int)
-            for ticket in user_tickets:
+            for ticket in support_tickets:
                 if ticket.created_at:
                     month_key = ticket.created_at.strftime("%Y-%m")
                     monthly_stats[month_key] += 1
